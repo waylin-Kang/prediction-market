@@ -54,28 +54,42 @@ function parseAffiliateToastData(result: {
 
 const MENU_CLOSE_DELAY_MS = 120
 const COPY_FEEDBACK_DURATION_MS = 1600
+const SHARE_SUCCESS_FEEDBACK_DURATION_MS = 2000
 
 function useCopyFeedback() {
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  const [shareSuccess, setShareSuccess] = useState(false)
   const copyTimeoutRef = useRef<number | null>(null)
+  const shareSuccessTimeoutRef = useRef<number | null>(null)
 
-  useEffect(function clearCopyTimeoutOnUnmount() {
-    return function clearCopyTimeout() {
-      if (copyTimeoutRef.current) {
+  useEffect(function clearFeedbackTimeoutsOnUnmount() {
+    return function clearFeedbackTimeouts() {
+      if (copyTimeoutRef.current != null) {
         window.clearTimeout(copyTimeoutRef.current)
+      }
+      if (shareSuccessTimeoutRef.current != null) {
+        window.clearTimeout(shareSuccessTimeoutRef.current)
       }
     }
   }, [])
 
   function markKeyAsCopied(key: string) {
     setCopiedKey(key)
-    if (copyTimeoutRef.current) {
+    if (copyTimeoutRef.current != null) {
       window.clearTimeout(copyTimeoutRef.current)
     }
     copyTimeoutRef.current = window.setTimeout(setCopiedKey, COPY_FEEDBACK_DURATION_MS, null)
   }
 
-  return { copiedKey, markKeyAsCopied }
+  function markShareSuccess(duration: number) {
+    setShareSuccess(true)
+    if (shareSuccessTimeoutRef.current != null) {
+      window.clearTimeout(shareSuccessTimeoutRef.current)
+    }
+    shareSuccessTimeoutRef.current = window.setTimeout(setShareSuccess, duration, false)
+  }
+
+  return { copiedKey, markKeyAsCopied, markShareSuccess, shareSuccess }
 }
 
 function useShareMenuHover() {
@@ -250,8 +264,7 @@ export default function EventShare({ event }: EventShareProps) {
   const isMultiMarket = event.total_markets_count > 1
   const eventPath = resolveEventPagePath(event)
 
-  const [shareSuccess, setShareSuccess] = useState(false)
-  const { copiedKey, markKeyAsCopied } = useCopyFeedback()
+  const { copiedKey, markKeyAsCopied, markShareSuccess, shareSuccess } = useCopyFeedback()
   const {
     shareMenuOpen,
     setShareMenuOpen,
@@ -267,13 +280,39 @@ export default function EventShare({ event }: EventShareProps) {
   const { maybeHandleDebugCopy } = useDebugCopy(event)
   const buildShareUrl = useShareUrlBuilder(affiliateCode)
 
-  function handleWrapperPointerEnter() {
+  useEffect(
+    function closeShareMenuOnScroll() {
+      if (!shareMenuOpen) {
+        return
+      }
+
+      function closeMenu() {
+        setShareMenuOpen(false)
+      }
+
+      window.addEventListener('scroll', closeMenu, { passive: true })
+      return function removeScrollListener() {
+        window.removeEventListener('scroll', closeMenu)
+      }
+    },
+    [shareMenuOpen, setShareMenuOpen],
+  )
+
+  function handleWrapperPointerEnter(pointerEvent: React.PointerEvent) {
+    if (pointerEvent.pointerType !== 'mouse') {
+      return
+    }
+
     clearCloseTimeout()
     setShareMenuOpen(true)
     prefetchAffiliateToastData()
   }
 
   function handleWrapperPointerLeave(pointerEvent: React.PointerEvent) {
+    if (pointerEvent.pointerType !== 'mouse') {
+      return
+    }
+
     if (relatedTargetIsInsideWrapper(pointerEvent.relatedTarget)) {
       return
     }
@@ -285,9 +324,8 @@ export default function EventShare({ event }: EventShareProps) {
     try {
       const url = buildShareUrl(eventPath)
       await navigator.clipboard.writeText(url)
-      setShareSuccess(true)
+      markShareSuccess(SHARE_SUCCESS_FEEDBACK_DURATION_MS)
       await showAffiliateToast()
-      setTimeout(setShareSuccess, 2000, false)
     } catch (error) {
       console.error('Error copying URL:', error)
     }
@@ -298,6 +336,8 @@ export default function EventShare({ event }: EventShareProps) {
       const url = buildShareUrl(path)
       await navigator.clipboard.writeText(url)
       markKeyAsCopied(key)
+      markShareSuccess(SHARE_SUCCESS_FEEDBACK_DURATION_MS)
+      setShareMenuOpen(false)
       await showAffiliateToast()
     } catch (error) {
       console.error('Error copying URL:', error)
@@ -330,7 +370,7 @@ export default function EventShare({ event }: EventShareProps) {
               />
             }
           >
-            <ShareIcon className="size-4" />
+            {shareSuccess ? <CheckIcon className="size-4 text-primary" /> : <ShareIcon className="size-4" />}
           </DropdownMenuTrigger>
           <DropdownMenuContent
             side="bottom"
