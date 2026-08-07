@@ -1248,6 +1248,7 @@ export default function AdminEventsTable({
     homeScore: parseSportsSegmentScoreInput(score.homeScore),
     awayScore: parseSportsSegmentScoreInput(score.awayScore),
   }))
+  const usesEsportsScoreLayout = sportsFinalEvent?.sports_vertical === 'esports'
   const hasSportsSourceIdentity = Boolean(
     sportsSourceProviderValue.trim() && (sportsSourceEventIdValue.trim() || sportsSourceGameIdValue.trim()),
   )
@@ -1466,58 +1467,117 @@ export default function AdminEventsTable({
     <div className="grid gap-4 py-2">
       {sportsFinalTeams ? (
         <div className="rounded-xl border bg-muted/10 px-3 py-4 sm:px-4">
-          {sportsFinalSegmentScores.length > 0 ? (
-            <SportsMatchScoreboard
-              homeTeam={sportsFinalTeams.home}
-              awayTeam={sportsFinalTeams.away}
-              scores={sportsFinalSegmentScores}
-              renderScore={({ score, team }) => {
-                const value = team === 'home' ? (score.homeScore ?? '') : (score.awayScore ?? '')
+          {usesEsportsScoreLayout ? (
+            <>
+              {sportsFinalSegmentScores.length > 0 ? (
+                <SportsMatchScoreboard
+                  homeTeam={sportsFinalTeams.home}
+                  awayTeam={sportsFinalTeams.away}
+                  scores={sportsFinalSegmentScores}
+                  renderScore={({ score, team }) => {
+                    const value = team === 'home' ? (score.homeScore ?? '') : (score.awayScore ?? '')
 
-                return (
+                    return (
+                      <Input
+                        id={`event-sports-segment-${score.segment}-${team}`}
+                        type="number"
+                        min={0}
+                        step={1}
+                        inputMode="numeric"
+                        placeholder="-"
+                        aria-label={`${sportsFinalTeams[team].name} M${score.segment} ${t('Score')}`}
+                        value={value}
+                        onChange={(event) => {
+                          const nextValue = event.target.value
+                          setSportsSegmentScoreValues((current) =>
+                            current.map((item) =>
+                              item.segment === score.segment
+                                ? { ...item, [team === 'home' ? 'homeScore' : 'awayScore']: nextValue }
+                                : item,
+                            ),
+                          )
+                        }}
+                        disabled={isSavingSportsFinal}
+                        className="h-8 w-9 [appearance:textfield] border-0 bg-transparent px-0 text-center text-sm font-semibold shadow-none focus-visible:ring-1 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                      />
+                    )
+                  }}
+                />
+              ) : null}
+
+              <div
+                className={cn('grid items-center gap-2', sportsFinalSegmentScores.length > 0 && 'mt-4 border-t pt-4')}
+              >
+                <Label className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                  {t('Series score')}
+                </Label>
+                <div className="grid grid-cols-[3.5rem_auto_3.5rem] items-center justify-end gap-2">
+                  {sportsFinalSegmentScores.length === 0 ? (
+                    <>
+                      <Label htmlFor="event-sports-score-home" className="truncate text-center text-xs">
+                        {sportsFinalTeams.home.name}
+                      </Label>
+                      <span aria-hidden="true" />
+                      <Label htmlFor="event-sports-score-away" className="truncate text-center text-xs">
+                        {sportsFinalTeams.away.name}
+                      </Label>
+                    </>
+                  ) : null}
                   <Input
-                    id={`event-sports-segment-${score.segment}-${team}`}
+                    id="event-sports-score-home"
                     type="number"
                     min={0}
                     step={1}
                     inputMode="numeric"
-                    placeholder="-"
-                    aria-label={`${sportsFinalTeams[team].name} M${score.segment} ${t('Score')}`}
-                    value={value}
-                    onChange={(event) => {
-                      const nextValue = event.target.value
-                      setSportsSegmentScoreValues((current) =>
-                        current.map((item) =>
-                          item.segment === score.segment
-                            ? { ...item, [team === 'home' ? 'homeScore' : 'awayScore']: nextValue }
-                            : item,
-                        ),
-                      )
-                    }}
+                    placeholder="0"
+                    aria-label={`${sportsFinalTeams.home.name} ${t('Score')}`}
+                    value={sportsScoreHomeValue}
+                    onChange={(event) => setSportsScoreHomeValue(event.target.value)}
                     disabled={isSavingSportsFinal}
-                    className="h-8 w-9 [appearance:textfield] border-0 bg-transparent px-0 text-center text-sm font-semibold shadow-none focus-visible:ring-1 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    className="h-10 [appearance:textfield] px-1 text-center text-base font-semibold [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                   />
-                )
-              }}
-            />
-          ) : null}
+                  <span className="text-base font-semibold text-muted-foreground" aria-hidden="true">
+                    ×
+                  </span>
+                  <Input
+                    id="event-sports-score-away"
+                    type="number"
+                    min={0}
+                    step={1}
+                    inputMode="numeric"
+                    placeholder="0"
+                    aria-label={`${sportsFinalTeams.away.name} ${t('Score')}`}
+                    value={sportsScoreAwayValue}
+                    onChange={(event) => setSportsScoreAwayValue(event.target.value)}
+                    disabled={isSavingSportsFinal}
+                    className="h-10 [appearance:textfield] px-1 text-center text-base font-semibold [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  />
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="grid grid-cols-[minmax(0,1fr)_3.5rem_auto_3.5rem_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[minmax(0,1fr)_4rem_auto_4rem_minmax(0,1fr)] sm:gap-3">
+              <div className="flex min-w-0 flex-col items-center gap-2 text-center">
+                <div className="flex size-12 items-center justify-center sm:size-14">
+                  {sportsFinalTeams.home.logoUrl ? (
+                    <EventIconImage
+                      src={sportsFinalTeams.home.logoUrl}
+                      alt={sportsFinalTeams.home.name}
+                      sizes="56px"
+                      containerClassName="size-full rounded-md"
+                      imageClassName="object-contain"
+                    />
+                  ) : (
+                    <div className="flex size-full items-center justify-center text-sm font-semibold text-muted-foreground">
+                      {sportsFinalTeams.home.name.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+                <span className="line-clamp-2 w-full text-xs leading-tight font-medium break-words sm:text-sm">
+                  {sportsFinalTeams.home.name}
+                </span>
+              </div>
 
-          <div className={cn('grid items-center gap-2', sportsFinalSegmentScores.length > 0 && 'mt-4 border-t pt-4')}>
-            <Label className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-              {t('Series score')}
-            </Label>
-            <div className="grid grid-cols-[3.5rem_auto_3.5rem] items-center justify-end gap-2">
-              {sportsFinalSegmentScores.length === 0 ? (
-                <>
-                  <Label htmlFor="event-sports-score-home" className="truncate text-center text-xs">
-                    {sportsFinalTeams.home.name}
-                  </Label>
-                  <span aria-hidden="true" />
-                  <Label htmlFor="event-sports-score-away" className="truncate text-center text-xs">
-                    {sportsFinalTeams.away.name}
-                  </Label>
-                </>
-              ) : null}
               <Input
                 id="event-sports-score-home"
                 type="number"
@@ -1529,11 +1589,13 @@ export default function AdminEventsTable({
                 value={sportsScoreHomeValue}
                 onChange={(event) => setSportsScoreHomeValue(event.target.value)}
                 disabled={isSavingSportsFinal}
-                className="h-10 [appearance:textfield] px-1 text-center text-base font-semibold [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                className="h-12 [appearance:textfield] px-1 text-center text-lg font-semibold [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
+
               <span className="text-base font-semibold text-muted-foreground" aria-hidden="true">
                 ×
               </span>
+
               <Input
                 id="event-sports-score-away"
                 type="number"
@@ -1545,10 +1607,31 @@ export default function AdminEventsTable({
                 value={sportsScoreAwayValue}
                 onChange={(event) => setSportsScoreAwayValue(event.target.value)}
                 disabled={isSavingSportsFinal}
-                className="h-10 [appearance:textfield] px-1 text-center text-base font-semibold [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                className="h-12 [appearance:textfield] px-1 text-center text-lg font-semibold [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
+
+              <div className="flex min-w-0 flex-col items-center gap-2 text-center">
+                <div className="flex size-12 items-center justify-center sm:size-14">
+                  {sportsFinalTeams.away.logoUrl ? (
+                    <EventIconImage
+                      src={sportsFinalTeams.away.logoUrl}
+                      alt={sportsFinalTeams.away.name}
+                      sizes="56px"
+                      containerClassName="size-full rounded-md"
+                      imageClassName="object-contain"
+                    />
+                  ) : (
+                    <div className="flex size-full items-center justify-center text-sm font-semibold text-muted-foreground">
+                      {sportsFinalTeams.away.name.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+                <span className="line-clamp-2 w-full text-xs leading-tight font-medium break-words sm:text-sm">
+                  {sportsFinalTeams.away.name}
+                </span>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       ) : null}
 

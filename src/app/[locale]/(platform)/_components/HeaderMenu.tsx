@@ -27,7 +27,7 @@ function HeaderMenuSkeleton() {
     <div className="flex items-center gap-2" aria-hidden="true" data-testid="header-menu-skeleton">
       <Skeleton className="hidden h-9 w-16 lg:block" />
       <Skeleton className="hidden h-9 w-16 lg:block" />
-      <Skeleton className="hidden h-9 w-16 lg:block" />
+      <Skeleton className="hidden h-9 w-20 lg:block" />
       <Skeleton className="size-9 rounded-md" />
       <div className="-ml-1 hidden h-5 w-px bg-border md:block" />
       <Skeleton className="h-9 w-20 rounded-md" />
@@ -38,19 +38,20 @@ function HeaderMenuSkeleton() {
 export default function HeaderMenu() {
   const t = useExtracted()
   const { open: openAppKit } = useAppKit()
-  const { data: session } = useSession()
+  const { data: session, isPending } = useSession()
   const hasHydrated = useHasHydrated()
   const isMobile = useIsMobile()
   const tradingOnboarding = useOptionalTradingOnboarding()
   const user = useUser()
 
-  const isAuthenticated = hasHydrated && (Boolean(session?.user) || Boolean(user))
-  const shouldShowGuestActions = hasHydrated && !isAuthenticated
+  const shouldShowSkeleton = !hasHydrated || isPending
+  const isAuthenticated = !shouldShowSkeleton && (Boolean(session?.user) || Boolean(user))
+  const shouldShowGuestActions = !shouldShowSkeleton && !isAuthenticated
   const startDepositFlow = tradingOnboarding?.startDepositFlow
 
   return (
     <>
-      {!hasHydrated && <HeaderMenuSkeleton />}
+      {shouldShowSkeleton && <HeaderMenuSkeleton />}
 
       {isAuthenticated && (
         <>
