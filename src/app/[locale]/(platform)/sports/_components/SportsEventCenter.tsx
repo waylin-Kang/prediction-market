@@ -1,9 +1,9 @@
 'use client'
 
-import { ChevronLeftIcon, InfoIcon } from 'lucide-react'
+import { ChevronLeftIcon, Clock3Icon, InfoIcon } from 'lucide-react'
 import { useLocale } from 'next-intl'
 import Image from 'next/image'
-import { Suspense, useMemo } from 'react'
+import { Suspense, useLayoutEffect, useMemo, useState } from 'react'
 
 import type {
   AuxiliaryMarketPanel,
@@ -44,6 +44,7 @@ import {
 } from '@/app/[locale]/(platform)/sports/_components/sports-event-center-hooks'
 import { headerIconButtonClass } from '@/app/[locale]/(platform)/sports/_components/sports-event-center-types'
 import {
+  formatSportsEventCountdown,
   formatSportsEventLocalStartLabels,
   formatSportsEventStartLabels,
   normalizeLivestreamUrl,
@@ -79,6 +80,7 @@ import {
 } from '@/app/[locale]/(platform)/sports/_utils/sports-games-data'
 import EventIconImage from '@/components/EventIconImage'
 import SiteLogoIcon from '@/components/SiteLogoIcon'
+import SportsMatchScoreboard from '@/components/SportsMatchScoreboard'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useCurrentTimestamp } from '@/hooks/useCurrentTimestamp'
@@ -87,6 +89,7 @@ import { useIsMobile } from '@/hooks/useIsMobile'
 import { useSiteIdentity } from '@/hooks/useSiteIdentity'
 import { Link } from '@/i18n/navigation'
 import { formatVolume } from '@/lib/formatters'
+import { resolveSportsSegmentNumbers } from '@/lib/sports-segment-score'
 import { shouldUseCroppedSportsTeamLogo } from '@/lib/sports-team-logo'
 import { getSportsVerticalConfig } from '@/lib/sports-vertical'
 import { cn } from '@/lib/utils'
@@ -107,6 +110,74 @@ const HALVES_REG_TIME_TOOLTIP =
   'This market refers only to the outcome within the first 45 minutes of regular play plus stoppage time.'
 const EXACT_SCORE_REG_TIME_TOOLTIP =
   'This market refers only to the outcome within the first 90 minutes of regular play plus stoppage time.'
+const MAX_SPORTS_EVENT_START_TIMEOUT_MS = 2_147_483_647
+
+function SportsEventCountdown({ startTimestamp }: { startTimestamp: number }) {
+  const currentTimestamp = useCurrentTimestamp({ initialTimestamp: Date.now(), intervalMs: 1_000 })
+  const countdownLabel =
+    currentTimestamp !== null && startTimestamp > currentTimestamp
+      ? formatSportsEventCountdown(startTimestamp, currentTimestamp)
+      : null
+
+  return (
+    <div className="mb-3 flex justify-center">
+      <span
+        suppressHydrationWarning
+        className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground tabular-nums"
+      >
+        <Clock3Icon className="size-4" />
+        {countdownLabel ?? ''}
+      </span>
+    </div>
+  )
+}
+
+function useSportsEventHasStarted(startTimestamp: number | null) {
+  const [startedTimestamp, setStartedTimestamp] = useState<number | null>(null)
+  const hasStarted = startTimestamp !== null && startedTimestamp === startTimestamp
+
+  useLayoutEffect(
+    function scheduleSportsEventStart() {
+      if (startTimestamp === null) {
+        return
+      }
+
+      const scheduledStartTimestamp = startTimestamp
+      let timeout: number | null = null
+
+      function scheduleStartUpdate() {
+        const remainingMilliseconds = scheduledStartTimestamp - Date.now()
+        if (remainingMilliseconds <= 0) {
+          setStartedTimestamp(scheduledStartTimestamp)
+          return
+        }
+
+        timeout = window.setTimeout(
+          () => {
+            if (Date.now() >= scheduledStartTimestamp) {
+              setStartedTimestamp(scheduledStartTimestamp)
+              return
+            }
+
+            scheduleStartUpdate()
+          },
+          Math.min(remainingMilliseconds, MAX_SPORTS_EVENT_START_TIMEOUT_MS),
+        )
+      }
+
+      scheduleStartUpdate()
+
+      return function clearSportsEventStartTimeout() {
+        if (timeout !== null) {
+          window.clearTimeout(timeout)
+        }
+      }
+    },
+    [startTimestamp],
+  )
+
+  return hasStarted
+}
 
 function resolvePlayerPropPanelViewKey(entry: AuxiliaryMarketPanel) {
   for (const market of entry.markets) {
@@ -681,7 +752,6 @@ export default function SportsEventCenter({
     }
   }
 
-  const currentTimestamp = useCurrentTimestamp({ intervalMs: 60_000 })
   const parsedStartTimestamp = heroCard.startTime
     ? Date.parse(heroCard.startTime)
     : heroCard.event.sports_start_time
@@ -696,6 +766,7 @@ export default function SportsEventCenter({
   const visibleStartLabels = localStartLabels ?? startLabels
   const timeLabel = visibleStartLabels?.timeLabel ?? 'TBD'
   const dayLabel = visibleStartLabels?.dayLabel ?? 'Date TBD'
+  const hasStarted = useSportsEventHasStarted(startTimestamp)
 
   const team1 = heroCard.teams[0] ?? null
   const team2 = heroCard.teams[1] ?? null
@@ -716,13 +787,20 @@ export default function SportsEventCenter({
   const isCurrentEventLivestreamOpen =
     normalizedEventLivestreamUrl !== null && normalizedEventLivestreamUrl === activeStreamUrl
   const showFinalScore = heroCard.event.sports_ended === true
-  const hasStarted = currentTimestamp != null && startTimestamp !== null && startTimestamp <= currentTimestamp
   const showLiveScore = !showFinalScore && (heroCard.event.sports_live === true || hasStarted)
   const parsedScore = parseSportsScore(heroCard.event.sports_score)
   const team1Score = showLiveScore ? (parsedScore?.team1 ?? 0) : parsedScore?.team1
   const team2Score = showLiveScore ? (parsedScore?.team2 ?? 0) : parsedScore?.team2
   const team1Won = team1Score != null && team2Score != null && team1Score > team2Score
   const team2Won = team1Score != null && team2Score != null && team2Score > team1Score
+  const usesEsportsHeroLayout = vertical === 'esports'
+  const segmentScores = resolveSportsSegmentNumbers({
+    scores: heroCard.event.sports_segment_scores,
+    title: heroCard.event.title,
+    segmentNumbers: hasEsportsSegmentedLayout ? esportsSegmentTabNumbers : [],
+    segmentCount: heroCard.event.sports_segment_count,
+  })
+  const showSegmentScoreboard = vertical === 'esports' && segmentScores.length > 0
 
   const heroMoneylineButtonKey = heroCard.buttons.some((button) => button.key === moneylineButtonKey)
     ? moneylineButtonKey
@@ -948,20 +1026,20 @@ export default function SportsEventCenter({
                     : 'grid-cols-2',
               )}
             >
-              {visibleButtons.map((button) => {
-                const isActive = activeTradeButtonKey === button.key
+              {visibleButtons.map((marketButton) => {
+                const isActive = activeTradeButtonKey === marketButton.key
                 const hasTeamColor =
-                  (button.tone === 'team1' || button.tone === 'team2') &&
-                  (button.marketType === 'moneyline' || isActive)
-                const isOverButton = isActive && button.tone === 'over'
-                const isUnderButton = isActive && button.tone === 'under'
+                  (marketButton.tone === 'team1' || marketButton.tone === 'team2') &&
+                  (marketButton.marketType === 'moneyline' || isActive)
+                const isOverButton = isActive && marketButton.tone === 'over'
+                const isUnderButton = isActive && marketButton.tone === 'under'
                 const buttonOverlayStyle = hasTeamColor
-                  ? resolveButtonOverlayStyle(button.color, button.tone)
+                  ? resolveButtonOverlayStyle(marketButton.color, marketButton.tone)
                   : undefined
 
                 return (
                   <div
-                    key={`${panelKey}-${button.key}`}
+                    key={`${panelKey}-${marketButton.key}`}
                     className={cn(
                       'relative min-w-0 overflow-hidden rounded-lg pb-1.25',
                       isMoneylinePanel && 'w-full sm:w-[118px] sm:shrink-0',
@@ -974,18 +1052,18 @@ export default function SportsEventCenter({
                         isOverButton && 'bg-yes/70',
                         isUnderButton && 'bg-no/70',
                       )}
-                      style={hasTeamColor ? resolveButtonDepthStyle(button.color, button.tone) : undefined}
+                      style={hasTeamColor ? resolveButtonDepthStyle(marketButton.color, marketButton.tone) : undefined}
                     />
                     <button
                       type="button"
                       data-sports-card-control="true"
                       onClick={(event) => {
                         event.stopPropagation()
-                        updateAuxiliarySelection(panelKey, button.key, {
+                        updateAuxiliarySelection(panelKey, marketButton.key, {
                           panelMode: isResolved ? 'preserve' : 'full',
                         })
                       }}
-                      style={hasTeamColor ? resolveButtonStyle(button.color, button.tone) : undefined}
+                      style={hasTeamColor ? resolveButtonStyle(marketButton.color, marketButton.tone) : undefined}
                       className={cn(
                         `relative flex h-9 w-full translate-y-0 items-center rounded-lg text-xs font-semibold shadow-sm transition-transform duration-150 ease-out hover:translate-y-px active:translate-y-0.5`,
                         isMoneylinePanel ? 'justify-center px-2' : 'justify-between px-3',
@@ -1002,21 +1080,21 @@ export default function SportsEventCenter({
                       ) : null}
                       {isMoneylinePanel ? (
                         <>
-                          <span className="relative z-1 mr-1 uppercase opacity-80">{button.label}</span>
+                          <span className="relative z-1 mr-1 uppercase opacity-80">{marketButton.label}</span>
                           <span
                             className={cn(
                               'relative z-1 text-sm leading-none tabular-nums transition-opacity',
                               isActive ? 'opacity-100' : 'opacity-45',
                             )}
                           >
-                            {formatButtonOdds(buttonPriceCentsByKey.get(button.key) ?? button.cents)}
+                            {formatButtonOdds(buttonPriceCentsByKey.get(marketButton.key) ?? marketButton.cents)}
                           </span>
                         </>
                       ) : (
                         <>
-                          <span className="uppercase opacity-80">{button.label}</span>
+                          <span className="uppercase opacity-80">{marketButton.label}</span>
                           <span className="text-sm leading-none tabular-nums">
-                            {formatButtonOdds(buttonPriceCentsByKey.get(button.key) ?? button.cents)}
+                            {formatButtonOdds(buttonPriceCentsByKey.get(marketButton.key) ?? marketButton.cents)}
                           </span>
                         </>
                       )}
@@ -1125,19 +1203,68 @@ export default function SportsEventCenter({
           const entry = activeSeriesPreviewSegmentWinnerPanel
           const selectedButtonKey = selectedAuxiliaryButtonByConditionId[entry.key] ?? entry.buttons[0]?.key ?? null
           const isResolved = entry.markets.every((market) => Boolean(market.is_resolved || market.condition?.resolved))
+          const isOpen = openAuxiliaryConditionId === entry.key
+          const activeTab = tabByAuxiliaryConditionId[entry.key] ?? 'orderBook'
+          const detailsAllowedConditionIds = new Set(entry.markets.map((market) => market.condition_id))
+
+          function toggleOrderBook() {
+            if (isOpen) {
+              setOpenAuxiliaryConditionId(null)
+              return
+            }
+
+            const buttonKey = selectedButtonKey ?? entry.buttons[0]?.key ?? null
+            if (buttonKey) {
+              updateAuxiliarySelection(entry.key, buttonKey, { panelMode: 'full' })
+            }
+          }
+
+          function handleSeriesPreviewCardClick(event: React.MouseEvent<HTMLElement>) {
+            const target = event.target as HTMLElement
+            if (target.closest('[data-sports-card-control="true"]')) {
+              return
+            }
+
+            toggleOrderBook()
+          }
+
+          function handlePickSeriesPreviewSegment(number: number) {
+            handlePickSeriesPreviewSegmentNumber(number)
+
+            if (!isOpen) {
+              return
+            }
+
+            const nextEntry = seriesPreviewSegmentWinnerPanels.find((panel) => panel.mapNumber === number) ?? null
+            const nextButtonKey = nextEntry
+              ? (selectedAuxiliaryButtonByConditionId[nextEntry.key] ?? nextEntry.buttons[0]?.key ?? null)
+              : null
+
+            if (nextEntry && nextButtonKey) {
+              updateAuxiliarySelection(nextEntry.key, nextButtonKey, { panelMode: 'full' })
+            }
+          }
 
           return (
             <article
               key={`${activeCard.id}-series-preview-${entry.key}`}
               className="overflow-hidden rounded-xl border bg-card"
             >
-              <div className="flex w-full flex-col items-stretch gap-3 px-4 py-[18px] sm:flex-row sm:items-center">
-                <div className="min-w-0 text-left">
+              <div
+                className="flex w-full cursor-pointer flex-col items-stretch gap-3 px-4 py-[18px] transition-colors hover:bg-secondary/30 sm:flex-row sm:items-center"
+                onClick={handleSeriesPreviewCardClick}
+              >
+                <button
+                  type="button"
+                  data-sports-card-control="true"
+                  onClick={toggleOrderBook}
+                  className="min-w-0 cursor-pointer text-left transition-colors hover:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+                >
                   <h3 className="text-sm font-semibold text-foreground">{entry.title}</h3>
                   <p className="mt-0.5 text-xs font-semibold text-muted-foreground">
                     {formatVolume(entry.volume)} Vol.
                   </p>
-                </div>
+                </button>
 
                 <div
                   className={cn(
@@ -1145,16 +1272,16 @@ export default function SportsEventCenter({
                     resolveMoneylineButtonGridClass(entry.buttons.length),
                   )}
                 >
-                  {entry.buttons.map((button) => {
-                    const isActive = activeTradeButtonKey === button.key || selectedButtonKey === button.key
-                    const hasTeamColor = button.tone === 'team1' || button.tone === 'team2'
+                  {entry.buttons.map((marketButton) => {
+                    const isActive = activeTradeButtonKey === marketButton.key || selectedButtonKey === marketButton.key
+                    const hasTeamColor = marketButton.tone === 'team1' || marketButton.tone === 'team2'
                     const buttonOverlayStyle = hasTeamColor
-                      ? resolveButtonOverlayStyle(button.color, button.tone)
+                      ? resolveButtonOverlayStyle(marketButton.color, marketButton.tone)
                       : undefined
 
                     return (
                       <div
-                        key={`${entry.key}-${button.key}`}
+                        key={`${entry.key}-${marketButton.key}`}
                         className="relative w-full min-w-0 overflow-hidden rounded-lg pb-1.25 sm:w-[118px] sm:shrink-0"
                       >
                         <div
@@ -1162,17 +1289,20 @@ export default function SportsEventCenter({
                             'pointer-events-none absolute inset-x-0 bottom-0 h-4 rounded-b-lg',
                             !hasTeamColor && 'bg-border/70',
                           )}
-                          style={hasTeamColor ? resolveButtonDepthStyle(button.color, button.tone) : undefined}
+                          style={
+                            hasTeamColor ? resolveButtonDepthStyle(marketButton.color, marketButton.tone) : undefined
+                          }
                         />
                         <button
                           type="button"
                           data-sports-card-control="true"
-                          onClick={() => {
-                            updateAuxiliarySelection(entry.key, button.key, {
-                              panelMode: isResolved ? 'preserve' : isMobile ? 'full' : 'partial',
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            updateAuxiliarySelection(entry.key, marketButton.key, {
+                              panelMode: isResolved ? 'preserve' : 'full',
                             })
                           }}
-                          style={hasTeamColor ? resolveButtonStyle(button.color, button.tone) : undefined}
+                          style={hasTeamColor ? resolveButtonStyle(marketButton.color, marketButton.tone) : undefined}
                           className={cn(
                             `relative flex h-9 w-full translate-y-0 items-center justify-center rounded-lg px-2 text-xs font-semibold shadow-sm transition-transform duration-150 ease-out hover:translate-y-px active:translate-y-0.5`,
                             !hasTeamColor && 'bg-secondary text-secondary-foreground hover:bg-accent',
@@ -1185,10 +1315,10 @@ export default function SportsEventCenter({
                             />
                           ) : null}
                           <span className={cn('relative z-1 mr-1 uppercase', isActive ? 'opacity-80' : 'opacity-70')}>
-                            {button.label}
+                            {marketButton.label}
                           </span>
                           <span className="relative z-1 text-sm leading-none tabular-nums">
-                            {formatButtonOdds(buttonPriceCentsByKey.get(button.key) ?? button.cents)}
+                            {formatButtonOdds(buttonPriceCentsByKey.get(marketButton.key) ?? marketButton.cents)}
                           </span>
                         </button>
                       </div>
@@ -1202,9 +1332,30 @@ export default function SportsEventCenter({
                   options={seriesWinnerSegmentPickerOptions}
                   activeNumber={entry.mapNumber}
                   segmentLabel={segmentLabel}
-                  onPick={handlePickSeriesPreviewSegmentNumber}
+                  onPick={handlePickSeriesPreviewSegment}
                 />
               )}
+
+              <div className={cn('bg-card px-2.5', isOpen ? 'border-t pt-3' : 'pt-0')}>
+                <SportsGameDetailsPanel
+                  card={activeCard}
+                  activeDetailsTab={activeTab}
+                  selectedButtonKey={selectedButtonKey}
+                  showBottomContent={isOpen}
+                  defaultGraphTimeRange="ALL"
+                  allowedConditionIds={detailsAllowedConditionIds}
+                  showAboutTab
+                  aboutEvent={activeCard.event}
+                  rulesEvent={heroCard.event}
+                  showRedeemInPositions
+                  onOpenRedeemForCondition={handleOpenRedeemForCondition}
+                  oddsFormat={oddsFormat}
+                  onChangeTab={(tab) => setTabByAuxiliaryConditionId((current) => ({ ...current, [entry.key]: tab }))}
+                  onSelectButton={(buttonKey, options) => {
+                    updateAuxiliarySelection(entry.key, buttonKey, options)
+                  }}
+                />
+              </div>
             </article>
           )
         })()
@@ -1359,20 +1510,20 @@ export default function SportsEventCenter({
                             resolveMoneylineButtonGridClass(sectionButtons.length),
                           )}
                         >
-                          {sectionButtons.map((button) => {
-                            const isActive = activeTradeButtonKey === button.key
+                          {sectionButtons.map((marketButton) => {
+                            const isActive = activeTradeButtonKey === marketButton.key
                             const hasTeamColor =
-                              (button.tone === 'team1' || button.tone === 'team2') &&
-                              (button.marketType === 'moneyline' || isActive)
-                            const isOverButton = isActive && button.tone === 'over'
-                            const isUnderButton = isActive && button.tone === 'under'
+                              (marketButton.tone === 'team1' || marketButton.tone === 'team2') &&
+                              (marketButton.marketType === 'moneyline' || isActive)
+                            const isOverButton = isActive && marketButton.tone === 'over'
+                            const isUnderButton = isActive && marketButton.tone === 'under'
                             const buttonOverlayStyle = hasTeamColor
-                              ? resolveButtonOverlayStyle(button.color, button.tone)
+                              ? resolveButtonOverlayStyle(marketButton.color, marketButton.tone)
                               : undefined
 
                             return (
                               <div
-                                key={`${section.key}-${button.key}`}
+                                key={`${section.key}-${marketButton.key}`}
                                 className={cn(
                                   `relative w-full min-w-0 overflow-hidden rounded-lg pb-1.25 sm:w-[118px] sm:shrink-0`,
                                 )}
@@ -1384,16 +1535,22 @@ export default function SportsEventCenter({
                                     isOverButton && 'bg-yes/70',
                                     isUnderButton && 'bg-no/70',
                                   )}
-                                  style={hasTeamColor ? resolveButtonDepthStyle(button.color, button.tone) : undefined}
+                                  style={
+                                    hasTeamColor
+                                      ? resolveButtonDepthStyle(marketButton.color, marketButton.tone)
+                                      : undefined
+                                  }
                                 />
                                 <button
                                   type="button"
                                   data-sports-card-control="true"
                                   onClick={(event) => {
                                     event.stopPropagation()
-                                    updateSectionSelection(section.key, button.key, { panelMode: 'full' })
+                                    updateSectionSelection(section.key, marketButton.key, { panelMode: 'full' })
                                   }}
-                                  style={hasTeamColor ? resolveButtonStyle(button.color, button.tone) : undefined}
+                                  style={
+                                    hasTeamColor ? resolveButtonStyle(marketButton.color, marketButton.tone) : undefined
+                                  }
                                   className={cn(
                                     `relative flex h-9 w-full translate-y-0 items-center justify-center rounded-lg px-2 text-xs font-semibold shadow-sm transition-transform duration-150 ease-out hover:translate-y-px active:translate-y-0.5`,
                                     !hasTeamColor &&
@@ -1410,14 +1567,16 @@ export default function SportsEventCenter({
                                       style={buttonOverlayStyle}
                                     />
                                   ) : null}
-                                  <span className="relative z-1 mr-1 uppercase opacity-80">{button.label}</span>
+                                  <span className="relative z-1 mr-1 uppercase opacity-80">{marketButton.label}</span>
                                   <span
                                     className={cn(
                                       'relative z-1 text-sm leading-none tabular-nums transition-opacity',
                                       isActive ? 'opacity-100' : 'opacity-45',
                                     )}
                                   >
-                                    {formatButtonOdds(buttonPriceCentsByKey.get(button.key) ?? button.cents)}
+                                    {formatButtonOdds(
+                                      buttonPriceCentsByKey.get(marketButton.key) ?? marketButton.cents,
+                                    )}
                                   </span>
                                 </button>
                               </div>
@@ -1425,20 +1584,20 @@ export default function SportsEventCenter({
                           })}
                         </div>
                       ) : (
-                        sectionButtons.map((button) => {
-                          const isActive = activeTradeButtonKey === button.key
+                        sectionButtons.map((marketButton) => {
+                          const isActive = activeTradeButtonKey === marketButton.key
                           const hasTeamColor =
-                            (button.tone === 'team1' || button.tone === 'team2') &&
-                            (button.marketType === 'moneyline' || isActive)
-                          const isOverButton = isActive && button.tone === 'over'
-                          const isUnderButton = isActive && button.tone === 'under'
+                            (marketButton.tone === 'team1' || marketButton.tone === 'team2') &&
+                            (marketButton.marketType === 'moneyline' || isActive)
+                          const isOverButton = isActive && marketButton.tone === 'over'
+                          const isUnderButton = isActive && marketButton.tone === 'under'
                           const buttonOverlayStyle = hasTeamColor
-                            ? resolveButtonOverlayStyle(button.color, button.tone)
+                            ? resolveButtonOverlayStyle(marketButton.color, marketButton.tone)
                             : undefined
 
                           return (
                             <div
-                              key={`${section.key}-${button.key}`}
+                              key={`${section.key}-${marketButton.key}`}
                               className="relative min-w-0 overflow-hidden rounded-lg pb-1.25"
                             >
                               <div
@@ -1448,16 +1607,22 @@ export default function SportsEventCenter({
                                   isOverButton && 'bg-yes/70',
                                   isUnderButton && 'bg-no/70',
                                 )}
-                                style={hasTeamColor ? resolveButtonDepthStyle(button.color, button.tone) : undefined}
+                                style={
+                                  hasTeamColor
+                                    ? resolveButtonDepthStyle(marketButton.color, marketButton.tone)
+                                    : undefined
+                                }
                               />
                               <button
                                 type="button"
                                 data-sports-card-control="true"
                                 onClick={(event) => {
                                   event.stopPropagation()
-                                  updateSectionSelection(section.key, button.key, { panelMode: 'full' })
+                                  updateSectionSelection(section.key, marketButton.key, { panelMode: 'full' })
                                 }}
-                                style={hasTeamColor ? resolveButtonStyle(button.color, button.tone) : undefined}
+                                style={
+                                  hasTeamColor ? resolveButtonStyle(marketButton.color, marketButton.tone) : undefined
+                                }
                                 className={cn(
                                   `relative flex h-9 w-full translate-y-0 items-center justify-center rounded-lg px-2 text-xs font-semibold shadow-sm transition-transform duration-150 ease-out hover:translate-y-px active:translate-y-0.5`,
                                   !hasTeamColor &&
@@ -1476,10 +1641,12 @@ export default function SportsEventCenter({
                                 ) : null}
                                 <span className="relative z-1 flex w-full items-center justify-between gap-1 px-1">
                                   <span className="min-w-0 truncate text-left uppercase opacity-80">
-                                    {button.label}
+                                    {marketButton.label}
                                   </span>
                                   <span className="shrink-0 text-sm leading-none tabular-nums">
-                                    {formatButtonOdds(buttonPriceCentsByKey.get(button.key) ?? button.cents)}
+                                    {formatButtonOdds(
+                                      buttonPriceCentsByKey.get(marketButton.key) ?? marketButton.cents,
+                                    )}
                                   </span>
                                 </span>
                               </button>
@@ -1699,127 +1866,175 @@ export default function SportsEventCenter({
             </div>
           )}
 
-          <div className="mb-4 flex items-center justify-center gap-14 md:gap-16">
-            <div className="flex min-w-0 flex-col items-center gap-2">
+          {!showFinalScore && !showLiveScore && startTimestamp !== null && (
+            <SportsEventCountdown startTimestamp={startTimestamp} />
+          )}
+
+          {showSegmentScoreboard ? (
+            <SportsMatchScoreboard
+              homeTeam={{
+                name: heroTeam1Label,
+                abbreviation: team1?.abbreviation,
+                logoUrl: team1?.logoUrl,
+              }}
+              awayTeam={{
+                name: heroTeam2Label,
+                abbreviation: team2?.abbreviation,
+                logoUrl: team2?.logoUrl,
+              }}
+              scores={segmentScores}
+              className="mx-auto mb-4 w-full max-w-md"
+            />
+          ) : (
+            <div
+              className={cn(
+                'mx-auto mb-4 w-full',
+                usesEsportsHeroLayout
+                  ? 'flex max-w-sm flex-col gap-3'
+                  : 'grid max-w-md grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4',
+              )}
+            >
               <div
                 className={cn(
-                  'pointer-events-none flex items-center justify-center select-none',
-                  useCroppedHeroTeamLogo ? 'relative size-12 overflow-hidden rounded-lg' : 'size-12',
+                  'flex min-w-0',
+                  usesEsportsHeroLayout ? 'items-center gap-3' : 'flex-col items-center gap-2 text-center',
                 )}
               >
-                {team1?.logoUrl ? (
-                  useCroppedHeroTeamLogo ? (
-                    <Image
-                      src={team1.logoUrl}
-                      alt={`${team1.name} logo`}
-                      fill
-                      sizes="48px"
-                      draggable={false}
-                      className="scale-[1.12] object-cover object-center select-none"
-                    />
+                <div
+                  className={cn(
+                    'pointer-events-none flex items-center justify-center select-none',
+                    useCroppedHeroTeamLogo ? 'relative size-12 overflow-hidden rounded-lg' : 'size-12',
+                  )}
+                >
+                  {team1?.logoUrl ? (
+                    useCroppedHeroTeamLogo ? (
+                      <Image
+                        src={team1.logoUrl}
+                        alt={`${team1.name} logo`}
+                        fill
+                        sizes="48px"
+                        draggable={false}
+                        className="scale-[1.12] object-cover object-center select-none"
+                      />
+                    ) : (
+                      <Image
+                        src={team1.logoUrl}
+                        alt={`${team1.name} logo`}
+                        width={48}
+                        height={48}
+                        sizes="48px"
+                        draggable={false}
+                        className="size-full object-contain object-center select-none"
+                      />
+                    )
                   ) : (
-                    <Image
-                      src={team1.logoUrl}
-                      alt={`${team1.name} logo`}
-                      width={48}
-                      height={48}
-                      sizes="48px"
-                      draggable={false}
-                      className="size-full object-contain object-center select-none"
-                    />
-                  )
-                ) : (
-                  <div
-                    className={cn(
-                      'text-sm font-semibold text-muted-foreground',
-                      useCroppedHeroTeamLogo &&
-                        `flex size-full items-center justify-center rounded-lg border border-border/40 bg-secondary`,
-                    )}
-                  >
-                    {team1?.abbreviation ?? '—'}
-                  </div>
-                )}
-              </div>
-              <span className="text-center text-xs/tight font-semibold whitespace-nowrap text-foreground sm:text-sm">
-                {heroTeam1Label}
-              </span>
-            </div>
-
-            {showFinalScore || showLiveScore ? (
-              <div className="flex flex-col items-center">
-                <div className="flex items-center gap-2 text-3xl/none font-semibold tabular-nums">
-                  <span
-                    className={team1Won ? 'text-foreground' : team2Won ? 'text-muted-foreground' : 'text-foreground'}
-                  >
-                    {team1Score ?? '—'}
-                  </span>
-                  <span className="text-muted-foreground">-</span>
-                  <span
-                    className={team2Won ? 'text-foreground' : team1Won ? 'text-muted-foreground' : 'text-foreground'}
-                  >
-                    {team2Score ?? '—'}
-                  </span>
+                    <div
+                      className={cn(
+                        'text-sm font-semibold text-muted-foreground',
+                        useCroppedHeroTeamLogo &&
+                          `flex size-full items-center justify-center rounded-lg border border-border/40 bg-secondary`,
+                      )}
+                    >
+                      {team1?.abbreviation ?? '—'}
+                    </div>
+                  )}
                 </div>
-                {showFinalScore ? (
-                  <span className="mt-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                    FINAL
-                  </span>
-                ) : (
-                  <span className="mt-1 text-xs font-semibold tracking-wide text-red-500 uppercase">LIVE</span>
-                )}
+                <span
+                  className={cn(
+                    'min-w-0 truncate text-sm font-semibold text-foreground',
+                    !usesEsportsHeroLayout && 'w-full text-center',
+                  )}
+                >
+                  {heroTeam1Label}
+                </span>
               </div>
-            ) : (
-              <div className="flex flex-col items-center">
-                <span className="text-sm font-medium text-foreground">{timeLabel}</span>
-                <span className="text-sm font-medium text-muted-foreground">{dayLabel}</span>
-              </div>
-            )}
 
-            <div className="flex min-w-0 flex-col items-center gap-2">
+              {showFinalScore || showLiveScore ? (
+                <div className="flex flex-col items-center self-center">
+                  <div className="flex items-center gap-2 text-3xl/none font-semibold tabular-nums">
+                    <span
+                      className={team1Won ? 'text-foreground' : team2Won ? 'text-muted-foreground' : 'text-foreground'}
+                    >
+                      {team1Score ?? '—'}
+                    </span>
+                    <span className="text-muted-foreground">-</span>
+                    <span
+                      className={team2Won ? 'text-foreground' : team1Won ? 'text-muted-foreground' : 'text-foreground'}
+                    >
+                      {team2Score ?? '—'}
+                    </span>
+                  </div>
+                  {showFinalScore ? (
+                    <span className="mt-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                      FINAL
+                    </span>
+                  ) : (
+                    <span className="mt-1 text-xs font-semibold tracking-wide text-red-500 uppercase">LIVE</span>
+                  )}
+                </div>
+              ) : usesEsportsHeroLayout ? null : (
+                <div className="flex flex-col items-center text-center">
+                  <span className="text-sm font-medium text-foreground">{timeLabel}</span>
+                  <span className="text-sm font-medium text-muted-foreground">{dayLabel}</span>
+                </div>
+              )}
+
               <div
                 className={cn(
-                  'pointer-events-none flex items-center justify-center select-none',
-                  useCroppedHeroTeamLogo ? 'relative size-12 overflow-hidden rounded-lg' : 'size-12',
+                  'flex min-w-0',
+                  usesEsportsHeroLayout ? 'items-center gap-3' : 'flex-col items-center gap-2 text-center',
                 )}
               >
-                {team2?.logoUrl ? (
-                  useCroppedHeroTeamLogo ? (
-                    <Image
-                      src={team2.logoUrl}
-                      alt={`${team2.name} logo`}
-                      fill
-                      sizes="48px"
-                      draggable={false}
-                      className="scale-[1.12] object-cover object-center select-none"
-                    />
+                <div
+                  className={cn(
+                    'pointer-events-none flex items-center justify-center select-none',
+                    useCroppedHeroTeamLogo ? 'relative size-12 overflow-hidden rounded-lg' : 'size-12',
+                  )}
+                >
+                  {team2?.logoUrl ? (
+                    useCroppedHeroTeamLogo ? (
+                      <Image
+                        src={team2.logoUrl}
+                        alt={`${team2.name} logo`}
+                        fill
+                        sizes="48px"
+                        draggable={false}
+                        className="scale-[1.12] object-cover object-center select-none"
+                      />
+                    ) : (
+                      <Image
+                        src={team2.logoUrl}
+                        alt={`${team2.name} logo`}
+                        width={48}
+                        height={48}
+                        sizes="48px"
+                        draggable={false}
+                        className="size-full object-contain object-center select-none"
+                      />
+                    )
                   ) : (
-                    <Image
-                      src={team2.logoUrl}
-                      alt={`${team2.name} logo`}
-                      width={48}
-                      height={48}
-                      sizes="48px"
-                      draggable={false}
-                      className="size-full object-contain object-center select-none"
-                    />
-                  )
-                ) : (
-                  <div
-                    className={cn(
-                      'text-sm font-semibold text-muted-foreground',
-                      useCroppedHeroTeamLogo &&
-                        `flex size-full items-center justify-center rounded-lg border border-border/40 bg-secondary`,
-                    )}
-                  >
-                    {team2?.abbreviation ?? '—'}
-                  </div>
-                )}
+                    <div
+                      className={cn(
+                        'text-sm font-semibold text-muted-foreground',
+                        useCroppedHeroTeamLogo &&
+                          `flex size-full items-center justify-center rounded-lg border border-border/40 bg-secondary`,
+                      )}
+                    >
+                      {team2?.abbreviation ?? '—'}
+                    </div>
+                  )}
+                </div>
+                <span
+                  className={cn(
+                    'min-w-0 truncate text-sm font-semibold text-foreground',
+                    !usesEsportsHeroLayout && 'w-full text-center',
+                  )}
+                >
+                  {heroTeam2Label}
+                </span>
               </div>
-              <span className="text-center text-xs/tight font-semibold whitespace-nowrap text-foreground sm:text-sm">
-                {heroTeam2Label}
-              </span>
             </div>
-          </div>
+          )}
 
           <div className="mb-4">
             <div className="mb-2 flex items-center justify-between px-1">

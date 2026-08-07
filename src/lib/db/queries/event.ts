@@ -8,7 +8,14 @@ import type { AdminEventAttentionFilter } from '@/lib/admin-event-attention'
 import type { EventListSortBy, EventListStatusFilter } from '@/lib/event-list-filters'
 import type { SportsSlugResolver } from '@/lib/sports-slug-mapping'
 import type { SportsVertical } from '@/lib/sports-vertical'
-import type { ConditionChangeLogEntry, Event, EventLiveChartConfig, EventSeriesEntry, QueryResult } from '@/types'
+import type {
+  ConditionChangeLogEntry,
+  Event,
+  EventLiveChartConfig,
+  EventSeriesEntry,
+  QueryResult,
+  SportsSegmentScore,
+} from '@/types'
 
 import { DEFAULT_LOCALE } from '@/i18n/locales'
 import { cacheTags } from '@/lib/cache-tags'
@@ -59,6 +66,7 @@ import {
   SPORTS_AUXILIARY_SLUG_SQL_REGEX,
   stripSportsAuxiliaryEventSuffix,
 } from '@/lib/sports-event-slugs'
+import { normalizeSportsSegmentScores, resolveSportsSourceSegmentCount } from '@/lib/sports-segment-score'
 import { resolveCanonicalSportsSportSlug, resolveSportsSportSlugQueryCandidates } from '@/lib/sports-slug-mapping'
 import { getPublicAssetUrl } from '@/lib/storage'
 
@@ -662,6 +670,8 @@ async function hydrateSportsAuxiliaryEventContext(eventResult: DrizzleEventResul
 
   const shouldLoadBaseSports =
     currentSports.sports_score == null ||
+    currentSports.sports_segment_scores == null ||
+    currentSports.sports_source_payload == null ||
     currentSports.sports_period == null ||
     currentSports.sports_elapsed == null ||
     currentSports.sports_live == null ||
@@ -677,6 +687,8 @@ async function hydrateSportsAuxiliaryEventContext(eventResult: DrizzleEventResul
   const baseSportsRows = await db
     .select({
       sports_score: event_sports.sports_score,
+      sports_segment_scores: event_sports.sports_segment_scores,
+      sports_source_payload: event_sports.sports_source_payload,
       sports_period: event_sports.sports_period,
       sports_elapsed: event_sports.sports_elapsed,
       sports_live: event_sports.sports_live,
@@ -705,6 +717,8 @@ async function hydrateSportsAuxiliaryEventContext(eventResult: DrizzleEventResul
     sports: {
       ...currentSports,
       sports_score: currentSports.sports_score ?? baseSports.sports_score,
+      sports_segment_scores: currentSports.sports_segment_scores ?? baseSports.sports_segment_scores,
+      sports_source_payload: currentSports.sports_source_payload ?? baseSports.sports_source_payload,
       sports_period: currentSports.sports_period ?? baseSports.sports_period,
       sports_elapsed: currentSports.sports_elapsed ?? baseSports.sports_elapsed,
       sports_live: currentSports.sports_live ?? baseSports.sports_live,
@@ -746,6 +760,8 @@ function hydrateGroupedSportsAuxiliaryEventContexts(groupedEvents: DrizzleEventR
       sports: {
         ...currentSports,
         sports_score: currentSports.sports_score ?? baseSports.sports_score,
+        sports_segment_scores: currentSports.sports_segment_scores ?? baseSports.sports_segment_scores,
+        sports_source_payload: currentSports.sports_source_payload ?? baseSports.sports_source_payload,
         sports_period: currentSports.sports_period ?? baseSports.sports_period,
         sports_elapsed: currentSports.sports_elapsed ?? baseSports.sports_elapsed,
         sports_live: currentSports.sports_live ?? baseSports.sports_live,
@@ -1082,6 +1098,7 @@ function eventResource(
       (logoPath) => getPublicAssetUrl(logoPath) || logoPath,
     ) ?? null
   const sportsLeagueSlug = event.sports?.sports_league_slug ?? null
+  const sportsSegmentCount = resolveSportsSourceSegmentCount(event.sports?.sports_source_payload)
 
   return {
     id: event.id || '',
@@ -1116,6 +1133,8 @@ function eventResource(
     sports_start_time: event.sports?.sports_start_time?.toISOString() ?? null,
     sports_event_week: toOptionalNumber(event.sports?.sports_event_week),
     sports_score: event.sports?.sports_score ?? null,
+    sports_segment_scores: normalizeSportsSegmentScores(event.sports?.sports_segment_scores),
+    sports_segment_count: sportsSegmentCount,
     sports_period: event.sports?.sports_period ?? null,
     sports_elapsed: event.sports?.sports_elapsed ?? null,
     sports_live: event.sports?.sports_live ?? null,
@@ -2596,6 +2615,8 @@ export const EventRepository = {
       string,
       {
         sports_score: string | null
+        sports_segment_scores: SportsSegmentScore[] | null
+        sports_segment_count: number | null
         sports_live: boolean | null
         sports_ended: boolean | null
         sports_event_date: string | null
@@ -2670,6 +2691,8 @@ export const EventRepository = {
         .select({
           event_id: event_sports.event_id,
           sports_score: event_sports.sports_score,
+          sports_segment_scores: event_sports.sports_segment_scores,
+          sports_source_payload: event_sports.sports_source_payload,
           sports_live: event_sports.sports_live,
           sports_ended: event_sports.sports_ended,
           sports_event_date: event_sports.sports_event_date,
@@ -2692,6 +2715,8 @@ export const EventRepository = {
       for (const row of sportsRows) {
         sportsByEventId.set(row.event_id, {
           sports_score: row.sports_score ?? null,
+          sports_segment_scores: normalizeSportsSegmentScores(row.sports_segment_scores),
+          sports_segment_count: resolveSportsSourceSegmentCount(row.sports_source_payload),
           sports_live: row.sports_live ?? null,
           sports_ended: row.sports_ended ?? null,
           sports_event_date: row.sports_event_date ?? null,
@@ -2799,6 +2824,8 @@ export const EventRepository = {
         volume_24h: volumeData?.volume_24h ?? 0,
         is_hidden: Boolean(row.is_hidden),
         sports_score: sportsData?.sports_score ?? null,
+        sports_segment_scores: sportsData?.sports_segment_scores ?? null,
+        sports_segment_count: sportsData?.sports_segment_count ?? null,
         sports_live: sportsData?.sports_live ?? null,
         sports_ended: sportsData?.sports_ended ?? null,
         sports_event_date: sportsData?.sports_event_date ?? null,
@@ -2962,11 +2989,13 @@ export const EventRepository = {
     {
       sportsEnded,
       sportsScore,
+      sportsSegmentScores,
       sportsSource,
       livestreamUrl,
     }: {
       sportsEnded: boolean
       sportsScore: string | null
+      sportsSegmentScores?: SportsSegmentScore[] | null
       sportsSource?: {
         provider: string | null
         eventId: string | null
@@ -3020,6 +3049,10 @@ export const EventRepository = {
           sports_ended: sportsEnded,
           sports_score: sportsScore,
           updated_at: now,
+        }
+
+        if (sportsSegmentScores !== undefined) {
+          sportsPayload.sports_segment_scores = sportsSegmentScores
         }
 
         if (sportsEnded) {
