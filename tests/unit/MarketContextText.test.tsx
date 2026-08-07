@@ -17,11 +17,24 @@ describe('MarketContextText', () => {
     expect(container).not.toHaveTextContent('**')
   })
 
-  it('leaves markdown unformatted while the summary is typing', () => {
-    const { container } = render(<MarketContextText isTyping>**Down**, with a *path dependency*</MarketContextText>)
+  it('renders open bold markers while the summary is typing', () => {
+    const { container } = render(<MarketContextText isTyping>**Down</MarketContextText>)
 
-    expect(container).toHaveTextContent('**Down**, with a *path dependency*')
-    expect(container.querySelector('strong')).toBeNull()
+    expect(screen.getByText('Down').tagName).toBe('STRONG')
+    expect(container).not.toHaveTextContent('**')
+  })
+
+  it('renders open italic markers while the summary is typing', () => {
+    const { container } = render(<MarketContextText isTyping>{'A *path dependency'}</MarketContextText>)
+
+    expect(screen.getByText('path dependency').tagName).toBe('EM')
+    expect(container).not.toHaveTextContent('*')
+  })
+
+  it('keeps an incomplete marker literal while the summary is typing', () => {
+    const { container } = render(<MarketContextText isTyping>{'A trailing *'}</MarketContextText>)
+
+    expect(container).toHaveTextContent('A trailing *')
     expect(container.querySelector('em')).toBeNull()
   })
 

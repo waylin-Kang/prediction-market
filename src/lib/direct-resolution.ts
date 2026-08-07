@@ -1,6 +1,6 @@
 import type { Address, Hex } from 'viem'
 
-import { isAddress, stringToHex } from 'viem'
+import { stringToHex } from 'viem'
 
 import type { Event } from '@/types'
 
@@ -11,10 +11,13 @@ import {
   NEGRISK_OPERATOR_DRO_ADDRESS,
 } from '@/lib/contracts'
 import { isGasFeeTooLowError } from '@/lib/transaction-fees'
-import { normalizeAddress } from '@/lib/wallet'
 
 export type ResolutionType = 'dro_moov2' | 'uma_moov2' | 'legacy'
 export type DirectResolutionOutcome = 'yes' | 'no' | 'unknown'
+
+export function resolveResolutionActorAddress(connectedAddress: Address | null, authenticatedAddress: Address | null) {
+  return connectedAddress ?? authenticatedAddress
+}
 
 export const YES_OR_NO_IDENTIFIER = stringToHex('YES_OR_NO_QUERY', { size: 32 }) as Hex
 
@@ -135,24 +138,48 @@ function getMarketResolutionType(market: Event['markets'][number]): ResolutionTy
     : 'legacy'
 }
 
+export function isDirectResolutionConfiguration(input: {
+  resolver?: string | null
+  oracle?: string | null
+  metadata?: string | Record<string, unknown> | null
+}) {
+  let metadata: Record<string, unknown> = {}
+  if (typeof input.metadata === 'string' && input.metadata.trim()) {
+    try {
+      const parsed = JSON.parse(input.metadata) as unknown
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        metadata = parsed as Record<string, unknown>
+      }
+    } catch {
+      metadata = {}
+    }
+  } else if (input.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata)) {
+    metadata = input.metadata
+  }
+
+  const resolutionType = readMetadataString(metadata, 'resolution_type')
+  if (resolutionType === 'dro_moov2') {
+    return true
+  }
+  if (resolutionType === 'uma_moov2') {
+    return false
+  }
+
+  const candidates = [
+    input.resolver,
+    input.oracle,
+    readMetadataString(metadata, 'resolver'),
+    readMetadataString(metadata, 'resolution_adapter_address'),
+  ]
+  return candidates.some((candidate) => candidate && DIRECT_RESOLUTION_ADDRESSES.has(candidate.toLowerCase()))
+}
+
 export function isDirectResolutionMarket(market: Event['markets'][number]) {
   return getMarketResolutionType(market) === 'dro_moov2'
 }
 
 export function getDirectResolutionAdapterAddress(market: Event['markets'][number]): Address | null {
-  const metadata = parseMarketMetadata(market)
-  const candidates = [
-    readMetadataString(metadata, 'resolution_adapter_address'),
-    market.condition?.oracle,
-    market.neg_risk ? NEGRISK_DRO_CTF_ADAPTER_V4_ADDRESS : DRO_CTF_ADAPTER_V4_ADDRESS,
-  ]
-  for (const candidate of candidates) {
-    const normalized = normalizeAddress(candidate)
-    if (normalized && isAddress(normalized)) {
-      return normalized as Address
-    }
-  }
-  return null
+  return market.neg_risk ? NEGRISK_DRO_CTF_ADAPTER_V4_ADDRESS : DRO_CTF_ADAPTER_V4_ADDRESS
 }
 
 export function getDirectResolutionQuestionIds(market: Event['markets'][number]): {

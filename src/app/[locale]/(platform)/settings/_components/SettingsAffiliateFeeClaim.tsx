@@ -1,7 +1,7 @@
 'use client'
 
 import { useAppKitAccount } from '@reown/appkit/react'
-import { ArrowDownToLineIcon } from 'lucide-react'
+import { ArrowDownToLineIcon, BadgePercentIcon } from 'lucide-react'
 import { useExtracted } from 'next-intl'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { usePublicClient, useSignTypedData } from 'wagmi'
@@ -41,7 +41,11 @@ function fromBaseUnits(value: bigint): number {
   return Number(value) / 1_000_000
 }
 
-export default function SettingsAffiliateFeeClaim() {
+interface SettingsAffiliateFeeClaimProps {
+  lifetimeEarned: number
+}
+
+export default function SettingsAffiliateFeeClaim({ lifetimeEarned }: SettingsAffiliateFeeClaimProps) {
   const t = useExtracted()
   const { signTypedDataAsync } = useSignTypedData()
   const publicClient = usePublicClient()
@@ -191,17 +195,27 @@ export default function SettingsAffiliateFeeClaim() {
   }
 
   return (
-    <div className="rounded-lg border p-4 sm:p-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1">
-          <h3 className="text-lg font-semibold">{t('Affiliate Commissions')}</h3>
-          <p className="text-sm text-muted-foreground">
-            {t('{amount} available to claim', {
-              amount: formatCurrency(fromBaseUnits(totalClaimable)),
-            })}
+    <div className="relative flex min-h-56 flex-col overflow-hidden rounded-xl border bg-background p-5">
+      <div className="relative z-10 flex items-start justify-between gap-4">
+        <div className="grid size-10 place-items-center rounded-lg border border-yes/20 bg-yes/8 text-yes">
+          <BadgePercentIcon className="size-5" aria-hidden />
+        </div>
+        <span className="font-mono text-xs text-muted-foreground uppercase">{t('Affiliate rewards')}</span>
+      </div>
+
+      <div className="relative z-10 mt-6 flex flex-col items-stretch gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{t('Available to claim')}</p>
+          <p className="mt-1 text-4xl font-semibold tracking-tight text-foreground">
+            {formatCurrency(fromBaseUnits(totalClaimable))}
           </p>
         </div>
-        <Button type="button" onClick={() => void handleClaim()} disabled={isLoading || isClaiming}>
+        <Button
+          className="w-full sm:w-auto"
+          type="button"
+          onClick={() => void handleClaim()}
+          disabled={isLoading || isClaiming}
+        >
           {isClaiming || isLoading ? (
             <Spinner className="size-4" />
           ) : isConnected && depositWalletAddress ? (
@@ -217,6 +231,11 @@ export default function SettingsAffiliateFeeClaim() {
                   ? t('Refreshing...')
                   : t('Claim')}
         </Button>
+      </div>
+
+      <div className="relative z-10 mt-auto flex items-center justify-between gap-4 border-t pt-4">
+        <p className="text-xs text-muted-foreground">{t('Lifetime earned')}</p>
+        <p className="text-lg font-semibold tracking-tight">{formatCurrency(lifetimeEarned)}</p>
       </div>
     </div>
   )

@@ -53,7 +53,7 @@ function findClosingMarker(text: string, marker: string, startIndex: number) {
   return -1
 }
 
-function parseMarketContextText(text: string) {
+function parseMarketContextText(text: string, allowUnclosedMarkers = false) {
   const nodes: ReactNode[] = []
   let plainTextStart = 0
   let index = 0
@@ -61,11 +61,11 @@ function parseMarketContextText(text: string) {
   while (index < text.length) {
     let marker = ''
 
-    if (text.startsWith('***', index)) {
+    if (text.startsWith('***', index) && text[index + 3] && !/\s/.test(text[index + 3])) {
       marker = '***'
-    } else if (text.startsWith('**', index)) {
+    } else if (text.startsWith('**', index) && text[index + 2] && !/\s/.test(text[index + 2])) {
       marker = '**'
-    } else if (text[index] === '*' && text[index - 1] !== '*' && !/[\s*]/.test(text[index + 1] ?? '')) {
+    } else if (text[index] === '*' && text[index - 1] !== '*' && text[index + 1] && !/[\s*]/.test(text[index + 1])) {
       marker = '*'
     }
 
@@ -77,6 +77,28 @@ function parseMarketContextText(text: string) {
     const closingIndex = findClosingMarker(text, marker, index + marker.length)
 
     if (closingIndex === -1) {
+      if (allowUnclosedMarkers) {
+        if (plainTextStart < index) {
+          nodes.push(text.slice(plainTextStart, index))
+        }
+
+        const content = parseMarketContextText(text.slice(index + marker.length), true)
+
+        if (marker === '***') {
+          nodes.push(
+            <strong key={index}>
+              <em>{content}</em>
+            </strong>,
+          )
+        } else if (marker === '**') {
+          nodes.push(<strong key={index}>{content}</strong>)
+        } else {
+          nodes.push(<em key={index}>{content}</em>)
+        }
+
+        return nodes
+      }
+
       index += marker.length
       continue
     }
@@ -111,5 +133,5 @@ function parseMarketContextText(text: string) {
 }
 
 export function MarketContextText({ children, isTyping = false }: MarketContextTextProps) {
-  return isTyping ? children : parseMarketContextText(children)
+  return parseMarketContextText(children, isTyping)
 }

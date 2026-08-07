@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 
 import { ChevronDownIcon, GavelIcon, TriangleIcon } from 'lucide-react'
 import { useExtracted } from 'next-intl'
-import { useMemo, useState, useSyncExternalStore } from 'react'
+import { useMemo, useState } from 'react'
 
 import type { EventSeriesEntry } from '@/types'
 
@@ -26,51 +26,13 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useNowTimestamp } from '@/hooks/useNowTimestamp'
 import { Link } from '@/i18n/navigation'
 import { resolveEventPagePath } from '@/lib/events-routing'
 import { cn } from '@/lib/utils'
 
 const MAX_PAST_RESULT_BADGES = 5
 const DEFAULT_LIVE_TRADING_WINDOW_MS = 24 * 60 * 60 * 1000
-const NOW_TICK_INTERVAL_MS = 1000
-let nowTimestampStore = 0
-const nowTimestampListeners = new Set<() => void>()
-let nowTimestampInterval: number | null = null
-
-function subscribeToNowTimestamp(onStoreChange: () => void) {
-  nowTimestampListeners.add(onStoreChange)
-  const nextNowTimestamp = Date.now()
-  if (nextNowTimestamp !== nowTimestampStore) {
-    nowTimestampStore = nextNowTimestamp
-    onStoreChange()
-  }
-
-  if (nowTimestampInterval === null) {
-    nowTimestampInterval = window.setInterval(() => {
-      nowTimestampStore = Date.now()
-      for (const listener of nowTimestampListeners) {
-        listener()
-      }
-    }, NOW_TICK_INTERVAL_MS)
-  }
-
-  return () => {
-    nowTimestampListeners.delete(onStoreChange)
-
-    if (nowTimestampListeners.size === 0 && nowTimestampInterval !== null) {
-      window.clearInterval(nowTimestampInterval)
-      nowTimestampInterval = null
-    }
-  }
-}
-
-function getNowTimestampSnapshot() {
-  return nowTimestampStore
-}
-
-function getServerNowTimestampSnapshot() {
-  return 0
-}
 
 function parseSeriesEventDate(value: string | null | undefined) {
   if (!value) {
@@ -185,10 +147,6 @@ function isSeriesEventTradingNow(event: EventSeriesEntry, nowTimestamp: number, 
   return nowTimestamp >= tradingWindowStart && nowTimestamp < eventTimestamp
 }
 
-function useNowTimestamp() {
-  return useSyncExternalStore(subscribeToNowTimestamp, getNowTimestampSnapshot, getServerNowTimestampSnapshot)
-}
-
 function useSeriesNavigation({
   currentEventSlug,
   seriesEvents,
@@ -197,7 +155,7 @@ function useSeriesNavigation({
 }: {
   currentEventSlug: string | undefined
   seriesEvents: EventSeriesEntry[]
-  nowTimestamp: number
+  nowTimestamp: number | null
   tradingWindowMs: number
 }) {
   return useMemo(() => {
@@ -214,12 +172,14 @@ function useSeriesNavigation({
       .sort((a, b) => getSeriesEventTimestamp(a) - getSeriesEventTimestamp(b))
 
     const currentTradingEvent =
-      unresolved.find((event) => isSeriesEventTradingNow(event, nowTimestamp, tradingWindowMs)) ??
-      unresolved.find((event) => {
-        const eventTimestamp = getSeriesEventTimestamp(event)
-        return Number.isFinite(eventTimestamp) && eventTimestamp > nowTimestamp
-      }) ??
-      (currentEvent && !isSeriesEventResolved(currentEvent) ? currentEvent : null)
+      nowTimestamp === null
+        ? null
+        : (unresolved.find((event) => isSeriesEventTradingNow(event, nowTimestamp, tradingWindowMs)) ??
+          unresolved.find((event) => {
+            const eventTimestamp = getSeriesEventTimestamp(event)
+            return Number.isFinite(eventTimestamp) && eventTimestamp > nowTimestamp
+          }) ??
+          (currentEvent && !isSeriesEventResolved(currentEvent) ? currentEvent : null))
     const hasUnresolvedCurrentEvent = Boolean(currentEvent && !isSeriesEventResolved(currentEvent))
 
     return {
@@ -353,6 +313,10 @@ export default function EventSeriesPills({
       nowTimestamp,
       tradingWindowMs,
     })
+
+  if (nowTimestamp === null) {
+    return rightSlot ? <div className="flex justify-end">{rightSlot}</div> : null
+  }
 
   if (!hasSeriesNavigation && !rightSlot) {
     return null

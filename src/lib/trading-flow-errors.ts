@@ -6,6 +6,8 @@ export const DEFAULT_TRADING_AUTH_ERROR_MESSAGE =
   'Could not enable trading right now. Please try again in a few moments.'
 export const DEFAULT_APPROVE_TOKENS_ERROR_MESSAGE =
   'Could not approve tokens right now. Please try again in a few moments.'
+export const DEFAULT_AUTO_REDEEM_ERROR_MESSAGE =
+  'Could not enable auto-redeem right now. Please try again in a few moments.'
 export const DEFAULT_CANCEL_ORDER_ERROR_MESSAGE = 'Unable to cancel this order right now. Please try again.'
 export const DEFAULT_CANCEL_OPEN_ORDERS_ERROR_MESSAGE = 'Unable to cancel open orders right now. Please try again.'
 
@@ -18,7 +20,7 @@ const COMMON_TRADING_ERROR_MESSAGES: Record<string, string> = {
 const COMMON_TRANSPORT_ERROR_PATTERNS: Array<{ pattern: RegExp; message: string }> = [
   {
     pattern:
-      /\b(gas price below minimum|gas tip cap .*minimum needed|transaction underpriced|replacement transaction underpriced|max fee per gas less than block base fee|fee cap less than block base fee|wallet_transport_error|transport error|timeout waiting for relay|bad gateway|gateway timeout)\b/i,
+      /\b(gas price below minimum|gas tip cap .*minimum needed|transaction underpriced|replacement transaction underpriced|max fee per gas less than block base fee|fee cap less than block base fee|wallet_transport_error|transport error|rpc request failed|request timeout|timeout waiting for relay|bad gateway|gateway timeout)\b/i,
     message: '',
   },
 ]
@@ -187,6 +189,19 @@ export function mapApproveTokensError(
     fallbackMessage: DEFAULT_APPROVE_TOKENS_ERROR_MESSAGE,
     exactMessages: {
       wallet_service_disabled: 'Token approvals are temporarily unavailable right now.',
+    },
+  })
+}
+
+export function mapAutoRedeemError(
+  rawError: string | null | undefined,
+  options: { status?: number | null; contentType?: string | null; forceFallback?: boolean } = {},
+) {
+  return mapTradingFlowError(rawError, {
+    ...options,
+    fallbackMessage: DEFAULT_AUTO_REDEEM_ERROR_MESSAGE,
+    exactMessages: {
+      wallet_service_disabled: 'Auto-redeem is temporarily unavailable right now.',
     },
   })
 }

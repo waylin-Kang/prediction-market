@@ -1,7 +1,14 @@
 import type { LucideIcon } from 'lucide-react'
 import type { Route } from 'next'
 
-import { ChartNoAxesCombinedIcon, GavelIcon, HandCoinsIcon, UsersIcon, VolleyballIcon } from 'lucide-react'
+import {
+  ChartNoAxesCombinedIcon,
+  GavelIcon,
+  HandCoinsIcon,
+  MessageSquareWarningIcon,
+  UsersIcon,
+  VolleyballIcon,
+} from 'lucide-react'
 import { getExtracted, setRequestLocale } from 'next-intl/server'
 import { io } from 'next/cache'
 import { Suspense } from 'react'
@@ -16,8 +23,13 @@ import {
   fetchFeeHistoryTotal,
 } from '@/lib/data-api/fees'
 import { AdminDashboardRepository } from '@/lib/db/queries/admin-dashboard'
+import { ResolutionReportContextRepository } from '@/lib/db/queries/resolution-report-context'
 import { SettingsRepository } from '@/lib/db/queries/settings'
 import { formatCompactCount, formatCompactCurrency } from '@/lib/formatters'
+import {
+  countResolutionReportsByCondition,
+  fetchAllowedCreatorResolutionReports,
+} from '@/lib/resolution-reports-server'
 import { getFeeRecipientWalletFormValue } from '@/lib/theme-settings'
 import { cn } from '@/lib/utils'
 
@@ -116,7 +128,8 @@ function DashboardCardsFallback() {
       <DashboardCardSkeleton />
       <DashboardCardSkeleton />
       <DashboardCardSkeleton />
-      <DashboardCardSkeleton className="sm:col-span-2 xl:col-span-2" />
+      <DashboardCardSkeleton />
+      <DashboardCardSkeleton />
     </div>
   )
 }
@@ -129,7 +142,16 @@ async function AdminDashboardCards() {
     AdminDashboardRepository.getMetrics(),
     SettingsRepository.getSettings(),
   ])
-  const metrics = metricsResult.data
+  let resolutionReportCount: number | undefined
+  try {
+    const resolutionReports = await fetchAllowedCreatorResolutionReports()
+    resolutionReportCount = await ResolutionReportContextRepository.countActiveReports(
+      countResolutionReportsByCondition(resolutionReports),
+    )
+  } catch (error) {
+    console.warn('Could not load the resolution report dashboard metric.', error)
+  }
+  const metrics = metricsResult.data ? { ...metricsResult.data, resolutionReportCount } : metricsResult.data
   const feeRecipientWallet =
     getFeeRecipientWalletFormValue(settingsResult.data ?? undefined) || DEFAULT_FEE_RECEIVER_WALLET_ADDRESS
   const feeHistoryResults = await Promise.allSettled([
@@ -174,6 +196,14 @@ async function AdminDashboardCards() {
         label={t('Events awaiting resolution')}
         description={t('Past their end time')}
       />
+      <MetricCard
+        href={'/admin/events?attention=resolution-reports' as Route}
+        highlightIcon={(metrics?.resolutionReportCount ?? 0) > 0}
+        icon={MessageSquareWarningIcon}
+        value={formatCount(metrics?.resolutionReportCount)}
+        label={t('Resolution reports')}
+        description={t('User proposals awaiting review')}
+      />
       <ChartMetricCard
         href={'/admin/users' as Route}
         icon={UsersIcon}
@@ -199,12 +229,11 @@ async function AdminDashboardCards() {
         points={feeSeries}
       />
       <ChartMetricCard
-        className="sm:col-span-2 xl:col-span-2"
         href={'/admin/events' as Route}
         icon={ChartNoAxesCombinedIcon}
         value={metrics ? formatCompactCurrency(metrics.siteOrderVolume) : '—'}
         label={t('Site trading volume')}
-        description={t('Orders submitted through this site')}
+        description={t('Site orders only')}
         chartAriaLabel={t('Site order volume over the last 30 days')}
         chartFormat="currency"
         points={metrics?.siteOrderVolumeSeries ?? []}

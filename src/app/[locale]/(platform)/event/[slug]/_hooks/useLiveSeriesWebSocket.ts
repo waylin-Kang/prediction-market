@@ -26,6 +26,8 @@ interface UseLiveSeriesWebSocketOptions {
   isLiveView: boolean
 }
 
+const LIVE_DATA_HEARTBEAT_INTERVAL_MS = 5_000
+
 export function useLiveSeriesWebSocket({
   topic,
   eventType,
@@ -52,7 +54,15 @@ export function useLiveSeriesWebSocket({
 
       let isActive = true
       let ws: WebSocket | null = null
+      let heartbeatInterval: ReturnType<typeof setInterval> | null = null
       let previousPriceMessageTimestamp: number | null = null
+
+      function stopHeartbeat() {
+        if (heartbeatInterval) {
+          clearInterval(heartbeatInterval)
+          heartbeatInterval = null
+        }
+      }
 
       function buildSubscriptionPayload(action: 'subscribe' | 'unsubscribe') {
         const filters = JSON.stringify({
@@ -71,12 +81,18 @@ export function useLiveSeriesWebSocket({
         })
       }
 
-      function handleOpen() {
-        if (!ws) {
+      function handleOpen(socket: WebSocket) {
+        if (ws !== socket) {
           return
         }
         setStatus('connecting')
-        ws.send(buildSubscriptionPayload('subscribe'))
+        socket.send(buildSubscriptionPayload('subscribe'))
+        stopHeartbeat()
+        heartbeatInterval = setInterval(() => {
+          if (ws === socket && socket.readyState === WebSocket.OPEN) {
+            socket.send('PING')
+          }
+        }, LIVE_DATA_HEARTBEAT_INTERVAL_MS)
       }
 
       function handleMessage(eventMessage: MessageEvent<string>) {
@@ -201,7 +217,11 @@ export function useLiveSeriesWebSocket({
         reconnectController?.scheduleReconnect()
       }
 
-      function handleClose() {
+      function handleClose(socket: WebSocket) {
+        if (ws !== socket) {
+          return
+        }
+        stopHeartbeat()
         if (!isActive) {
           return
         }
@@ -214,10 +234,10 @@ export function useLiveSeriesWebSocket({
           return
         }
         const socket = new WebSocket(resolvedWsUrl)
-        socket.onopen = handleOpen
+        socket.onopen = () => handleOpen(socket)
         socket.onmessage = handleMessage
         socket.onerror = handleError
-        socket.onclose = handleClose
+        socket.onclose = () => handleClose(socket)
         ws = socket
       }
 
@@ -227,6 +247,7 @@ export function useLiveSeriesWebSocket({
         isActive: () => isActive,
         reconnectOnVisible: true,
         resetWebSocket: () => {
+          stopHeartbeat()
           ws = null
         },
       })
@@ -237,6 +258,7 @@ export function useLiveSeriesWebSocket({
       return function cleanupLiveSeriesWebSocket() {
         isActive = false
         setStatus('offline')
+        stopHeartbeat()
         clearReconnect()
         document.removeEventListener('visibilitychange', handleVisibilityChange)
         const socket = ws

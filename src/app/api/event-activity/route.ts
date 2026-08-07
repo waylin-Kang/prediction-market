@@ -12,6 +12,8 @@ import { getPublicAssetUrl } from '@/lib/storage'
 import { normalizeAddress } from '@/lib/wallet'
 
 interface DataApiActivity {
+  id?: string
+  event_id?: string
   proxyWallet?: string
   timestamp?: number
   conditionId?: string
@@ -98,13 +100,27 @@ export async function GET(request: Request) {
   const parsedLimit = Number.parseInt(searchParams.get('limit') || `${EVENT_ACTIVITY_PAGE_SIZE}`, 10)
   const parsedOffset = Number.parseInt(searchParams.get('offset') || '0', 10)
   const parsedFilterAmount = Number.parseFloat(searchParams.get('filterAmount') || '0')
+  const cursorTimestampValue = searchParams.get('cursorTimestamp')
+  const parsedCursorTimestamp = Number.parseInt(cursorTimestampValue || '', 10)
+  const cursorId = searchParams.get('cursorId')?.trim() || ''
+  const cursorUser = searchParams.get('cursorUser')?.trim().toLowerCase() || ''
 
   const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 50) : EVENT_ACTIVITY_PAGE_SIZE
   const offset = Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0
   const hasFilterAmount = Number.isFinite(parsedFilterAmount) && parsedFilterAmount > 0
+  const hasCursorInput =
+    searchParams.has('cursorTimestamp') || searchParams.has('cursorId') || searchParams.has('cursorUser')
+  const hasCursor =
+    Number.isFinite(parsedCursorTimestamp) && parsedCursorTimestamp > 0 && cursorId.length > 0 && cursorUser.length > 0
 
   if (!market) {
     return NextResponse.json({ error: 'Missing market parameter.' }, { status: 400 })
+  }
+  if (hasCursorInput && !hasCursor) {
+    return NextResponse.json(
+      { error: 'cursorTimestamp, cursorId, and cursorUser must be provided together.' },
+      { status: 400 },
+    )
   }
 
   const dataApiUrl = getDataApiUrl()
@@ -123,6 +139,11 @@ export async function GET(request: Request) {
     if (hasFilterAmount) {
       params.set('filterType', 'CASH')
       params.set('filterAmount', parsedFilterAmount.toString())
+    }
+    if (hasCursor) {
+      params.set('cursorTimestamp', parsedCursorTimestamp.toString())
+      params.set('cursorId', cursorId)
+      params.set('cursorUser', cursorUser)
     }
 
     const response = await fetch(`${dataApiUrl}/trades?${params.toString()}`)

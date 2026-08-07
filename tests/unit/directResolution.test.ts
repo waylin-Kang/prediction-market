@@ -2,13 +2,26 @@ import { describe, expect, it } from 'vitest'
 
 import type { Event } from '@/types'
 
-import { DRO_CTF_ADAPTER_V4_ADDRESS } from '@/lib/contracts'
-import { getDirectResolutionAdapterAddress, readDirectResolutionError } from '@/lib/direct-resolution'
+import { DRO_CTF_ADAPTER_V4_ADDRESS, NEGRISK_DRO_CTF_ADAPTER_V4_ADDRESS } from '@/lib/contracts'
+import {
+  getDirectResolutionAdapterAddress,
+  isDirectResolutionConfiguration,
+  readDirectResolutionError,
+  resolveResolutionActorAddress,
+} from '@/lib/direct-resolution'
 
-function buildMarket({ metadata, oracle }: { metadata?: Record<string, unknown>; oracle: string }) {
+function buildMarket({
+  metadata,
+  oracle,
+  negRisk = false,
+}: {
+  metadata?: Record<string, unknown>
+  oracle: string
+  negRisk?: boolean
+}) {
   return {
     metadata,
-    neg_risk: false,
+    neg_risk: negRisk,
     condition: {
       oracle,
     },
@@ -16,7 +29,31 @@ function buildMarket({ metadata, oracle }: { metadata?: Record<string, unknown>;
 }
 
 describe('direct resolution helpers', () => {
-  it('uses an explicit resolution adapter from metadata first', () => {
+  it('keeps an authenticated resolution identity while AppKit restores its address', () => {
+    const authenticatedAddress = '0x1111111111111111111111111111111111111111'
+
+    expect(resolveResolutionActorAddress(null, authenticatedAddress)).toBe(authenticatedAddress)
+  })
+
+  it('gives an explicit UMA resolution type precedence over direct adapter addresses', () => {
+    expect(
+      isDirectResolutionConfiguration({
+        oracle: DRO_CTF_ADAPTER_V4_ADDRESS,
+        metadata: { resolution_type: 'uma_moov2' },
+      }),
+    ).toBe(false)
+  })
+
+  it('gives an explicit direct resolution type precedence over unrecognized addresses', () => {
+    expect(
+      isDirectResolutionConfiguration({
+        oracle: '0x1111111111111111111111111111111111111111',
+        metadata: { resolution_type: 'dro_moov2' },
+      }),
+    ).toBe(true)
+  })
+
+  it('uses the configured standard DRO adapter instead of untrusted market addresses', () => {
     const metadataAdapter = '0x2222222222222222222222222222222222222222'
     const conditionOracle = '0x1111111111111111111111111111111111111111'
 
@@ -29,10 +66,10 @@ describe('direct resolution helpers', () => {
           oracle: conditionOracle,
         }),
       ),
-    ).toBe(metadataAdapter)
+    ).toBe(DRO_CTF_ADAPTER_V4_ADDRESS)
   })
 
-  it('uses the market condition oracle before the hardcoded DRO adapter fallback', () => {
+  it('uses the configured neg-risk DRO adapter for neg-risk markets', () => {
     const conditionOracle = '0x1111111111111111111111111111111111111111'
 
     expect(
@@ -40,10 +77,10 @@ describe('direct resolution helpers', () => {
         buildMarket({
           metadata: {},
           oracle: conditionOracle,
+          negRisk: true,
         }),
       ),
-    ).toBe(conditionOracle)
-    expect(conditionOracle).not.toBe(DRO_CTF_ADAPTER_V4_ADDRESS)
+    ).toBe(NEGRISK_DRO_CTF_ADAPTER_V4_ADDRESS)
   })
 
   it('maps direct resolution gas fee errors to a short user-facing message', () => {

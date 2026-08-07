@@ -29,7 +29,7 @@ import { slugifyText } from '@/lib/slug'
 import { findSportsEvents } from '@/lib/sports-source'
 import { normalizeSingleSportsSourceProvider } from '@/lib/sports-source/providers'
 import { loadSportsSourceProviderSettings } from '@/lib/sports-source/settings'
-import { uploadPublicAsset } from '@/lib/storage'
+import { uploadPublicAsset } from '@/lib/storage-upload'
 import {
   buildCronErrorResponse,
   buildSyncAlreadyRunningResponse,
@@ -532,6 +532,12 @@ async function syncMarkets(
     if (page.conditions.length === 0) {
       console.log('📦 PnL subgraph returned no additional conditions')
       initialScanExhausted = true
+      if (initialCreationTimestamp != null && !cursor) {
+        cursor = {
+          updatedAt: initialCreationTimestamp,
+          conditionId: `0x${'0'.repeat(64)}`,
+        }
+      }
       break
     }
 

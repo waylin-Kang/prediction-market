@@ -8,14 +8,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatedCounter } from 'react-animated-counter'
 import { useAccount, useConnections } from 'wagmi'
 
-import type { EventOrderPanelOutcomeSelectedAccent } from '@/app/[locale]/(platform)/event/[slug]/_components/EventOrderPanelOutcomeButton'
 import type { ArbitrageQuote } from '@/lib/arbitrage-quote'
-import type { OutcomeArbitrageQuote } from '@/lib/outcome-arbitrage-quote'
-import type { Market, SportsTeam } from '@/types'
+import type { Market } from '@/types'
 
 import { useOrderBookSummaries } from '@/app/[locale]/(platform)/event/[slug]/_components/EventOrderBook'
 import EventOrderPanelAnimatedCents from '@/app/[locale]/(platform)/event/[slug]/_components/EventOrderPanelAnimatedCents'
-import EventOrderPanelOutcomeArbitrage from '@/app/[locale]/(platform)/event/[slug]/_components/EventOrderPanelOutcomeArbitrage'
 import EventOrderPanelSubmitButton from '@/app/[locale]/(platform)/event/[slug]/_components/EventOrderPanelSubmitButton'
 import { Button } from '@/components/ui/button'
 import {
@@ -27,7 +24,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { toast } from '@/components/ui/toast'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useHasHydrated } from '@/hooks/useHasHydrated'
 import { useKuestFeeRate } from '@/hooks/useKuestFeeRate'
@@ -60,13 +56,7 @@ type AmountPreset = 'min' | 'mid' | 'max'
 
 interface EventOrderPanelArbitrageProps {
   market: Market
-  polymarketEnabled: boolean
   multiWalletEnabled: boolean
-  yesOutcomeLabel: string
-  noOutcomeLabel: string
-  yesOutcomeAccent: EventOrderPanelOutcomeSelectedAccent | null
-  noOutcomeAccent: EventOrderPanelOutcomeSelectedAccent | null
-  sportsTeams: SportsTeam[] | null
   siteWalletReady: boolean
   kuestBalance: number
   kuestFeeBps: number
@@ -74,7 +64,6 @@ interface EventOrderPanelArbitrageProps {
   submissionStep: 0 | 1 | 2 | 3
   onRequireSiteWallet: () => void
   onSubmit: (quote: ArbitrageQuote, polymarketMinimumOrderSize: number) => void
-  onSubmitOutcome: (quote: OutcomeArbitrageQuote) => void
 }
 
 interface ArbitragePricePreview {
@@ -929,7 +918,7 @@ function EventOrderPanelPolymarketArbitrage({
   ) : null
 
   return (
-    <div className="grid gap-4">
+    <div className="mt-4 grid gap-4">
       {multiWalletEnabled && appKitState.multiWallet && (
         <MultiWalletConnectionBridge onSwitchConnectionChange={handleSwitchConnectionChange} />
       )}
@@ -1258,81 +1247,5 @@ function EventOrderPanelPolymarketArbitrage({
 }
 
 export default function EventOrderPanelArbitrage(props: EventOrderPanelArbitrageProps) {
-  const t = useExtracted()
-  const hasPolymarketMarket = Boolean(
-    props.polymarketEnabled &&
-    props.market.polymarket_condition_id &&
-    props.market.outcomes.some(
-      (outcome) => outcome.outcome_index === OUTCOME_INDEX.YES && Boolean(outcome.polymarket_token_id),
-    ) &&
-    props.market.outcomes.some(
-      (outcome) => outcome.outcome_index === OUTCOME_INDEX.NO && Boolean(outcome.polymarket_token_id),
-    ),
-  )
-  const [strategy, setStrategy] = useState<'outcome' | 'polymarket'>('outcome')
-  const activeStrategy = hasPolymarketMarket ? strategy : 'outcome'
-  const strategyOptions = [
-    { value: 'outcome' as const, label: t('Outcome') },
-    ...(hasPolymarketMarket ? [{ value: 'polymarket' as const, label: 'Polymarket' }] : []),
-  ]
-
-  return (
-    <div className="grid gap-4">
-      {hasPolymarketMarket && (
-        <ToggleGroup
-          className="grid w-full grid-cols-2 border-b"
-          aria-label={t('Arbitrage strategy')}
-          value={[activeStrategy]}
-          onValueChange={(values) => {
-            const nextStrategy = values[0]
-            if (nextStrategy === 'outcome' || nextStrategy === 'polymarket') {
-              setStrategy(nextStrategy)
-            }
-          }}
-        >
-          {strategyOptions.map((option) => (
-            <ToggleGroupItem
-              key={option.value}
-              value={option.value}
-              disabled={props.isSubmitting}
-              className={cn(
-                'relative h-auto min-w-0 px-3 py-2.5 text-sm font-semibold transition-colors hover:bg-transparent data-pressed:bg-transparent data-pressed:text-foreground',
-                activeStrategy === option.value ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-                props.isSubmitting && 'cursor-not-allowed opacity-60',
-              )}
-            >
-              {option.label}
-              <span
-                aria-hidden="true"
-                className={cn(
-                  'absolute inset-x-3 -bottom-px h-0.5 rounded-full transition-colors',
-                  activeStrategy === option.value ? 'bg-foreground' : 'bg-transparent',
-                )}
-              />
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      )}
-
-      {activeStrategy === 'polymarket' ? (
-        <EventOrderPanelPolymarketArbitrage {...props} />
-      ) : (
-        <EventOrderPanelOutcomeArbitrage
-          market={props.market}
-          yesOutcomeLabel={props.yesOutcomeLabel}
-          noOutcomeLabel={props.noOutcomeLabel}
-          yesOutcomeAccent={props.yesOutcomeAccent}
-          noOutcomeAccent={props.noOutcomeAccent}
-          sportsTeams={props.sportsTeams}
-          siteWalletReady={props.siteWalletReady}
-          kuestBalance={props.kuestBalance}
-          kuestFeeBps={props.kuestFeeBps}
-          isSubmitting={props.isSubmitting}
-          submissionStep={props.submissionStep}
-          onRequireSiteWallet={props.onRequireSiteWallet}
-          onSubmit={props.onSubmitOutcome}
-        />
-      )}
-    </div>
-  )
+  return <EventOrderPanelPolymarketArbitrage {...props} />
 }

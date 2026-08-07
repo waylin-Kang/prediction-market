@@ -781,13 +781,14 @@ export async function listHomeFeaturedEvents(
     return []
   }
 
-  const { data: targets, error } = await HomeFeaturedEventsRepository.resolvePublicTargets(settings.maxCards)
+  const { data: resolvedTargets, error } = await HomeFeaturedEventsRepository.resolvePublicTargets(settings.maxCards)
   if (error) {
     console.error('Failed to resolve home featured targets', error)
     return []
   }
 
-  if (!targets?.length) {
+  const targets = resolvedTargets ?? []
+  if (targets.length === 0) {
     console.warn('Home featured markets are enabled, but no public targets were resolved.')
     return []
   }

@@ -685,7 +685,7 @@ export const HomeFeaturedEventsRepository = {
             or(isNull(home_featured_events.ends_at), gt(home_featured_events.ends_at, now)),
           ),
         )
-        .orderBy(asc(home_featured_events.rank), asc(home_featured_events.created_at))
+        .orderBy(asc(home_featured_events.rank), asc(home_featured_events.created_at), asc(home_featured_events.id))
         .limit(safeLimit * 2)
 
       const resolvedTargets: HomeFeaturedResolvedTarget[] = []

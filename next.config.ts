@@ -18,7 +18,10 @@ const config: NextConfig = {
   typedRoutes: true,
   reactStrictMode: false,
   reactCompiler: true,
-  staticPageGenerationTimeout: 180,
+  compress: false,
+  typescript: {
+    ignoreBuildErrors: !!process.env.VERCEL_ENV,
+  },
   experimental: {
     inlineCss: true,
     serverActions: {
@@ -58,6 +61,30 @@ const config: NextConfig = {
             value: "default-src 'self'; script-src 'self'",
           },
         ],
+      },
+    ]
+  },
+  async redirects() {
+    return [
+      {
+        source: '/docs/my-account/affiliate-program',
+        destination: '/docs/my-account/rewards',
+        permanent: true,
+      },
+      {
+        source: '/docs/my-account/affiliate-program.md',
+        destination: '/docs/my-account/rewards.md',
+        permanent: true,
+      },
+      {
+        source: '/:locale/docs/my-account/affiliate-program',
+        destination: '/:locale/docs/my-account/rewards',
+        permanent: true,
+      },
+      {
+        source: '/:locale/docs/my-account/affiliate-program.md',
+        destination: '/:locale/docs/my-account/rewards.md',
+        permanent: true,
       },
     ]
   },

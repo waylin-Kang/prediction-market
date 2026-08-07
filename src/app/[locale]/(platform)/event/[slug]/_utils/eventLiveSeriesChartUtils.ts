@@ -26,6 +26,7 @@ export const LIVE_CURSOR_GUIDE_TOP = 10
 export const LIVE_TARGET_MAX_BOTTOM_OFFSET = 10
 export const LIVE_CURRENT_MARKER_OFFSET_X = 0
 export const LIVE_PLOT_CLIP_RIGHT_PADDING = 22
+export const POLYMARKET_CHAINLINK_TWAP_CUTOVER_MS = Date.parse('2026-08-07T00:00:00Z')
 const LIVE_PRICE_STORAGE_PREFIX = 'kuest-live-last-price'
 
 export interface PersistedLivePrice {
@@ -610,6 +611,50 @@ export function normalizeSubscriptionSymbol(topic: string, symbol: string) {
   }
 
   return trimmed.toLowerCase()
+}
+
+export function resolveLiveSeriesRealtimeTopic({
+  configuredTopic,
+  activeWindowMinutes,
+  eventStartTimestamp,
+  eventEndTimestamp,
+}: {
+  configuredTopic: string
+  activeWindowMinutes: number
+  eventStartTimestamp?: number | null
+  eventEndTimestamp: number | null
+}) {
+  const normalizedTopic = configuredTopic.trim().toLowerCase()
+  const normalizedWindowMinutes = Number(activeWindowMinutes)
+  if (
+    normalizedTopic !== 'crypto_prices_chainlink' ||
+    !Number.isFinite(normalizedWindowMinutes) ||
+    normalizedWindowMinutes <= 0 ||
+    eventEndTimestamp == null ||
+    !Number.isFinite(eventEndTimestamp)
+  ) {
+    return configuredTopic
+  }
+
+  const eventWindowStartTimestamp =
+    eventStartTimestamp != null && Number.isFinite(eventStartTimestamp)
+      ? eventStartTimestamp
+      : eventEndTimestamp - normalizedWindowMinutes * 60 * 1000
+  if (eventWindowStartTimestamp < POLYMARKET_CHAINLINK_TWAP_CUTOVER_MS) {
+    return configuredTopic
+  }
+
+  // RTDS currently publishes only these two TWAP cadences. The supported
+  // market windows intentionally mirror the upstream Polymarket templates.
+  if (normalizedWindowMinutes === 5) {
+    return 'crypto_prices_twap_thirty'
+  }
+
+  if (normalizedWindowMinutes === 15 || normalizedWindowMinutes === 4 * 60) {
+    return 'crypto_prices_twap_sixty'
+  }
+
+  return configuredTopic
 }
 
 function normalizeComparableSymbol(symbol: string) {

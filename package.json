@@ -51,6 +51,7 @@
     "@visx/scale": "4.0.1-alpha.0",
     "@visx/shape": "4.0.1-alpha.0",
     "@visx/tooltip": "4.0.1-alpha.0",
+    "@wagmi/core": "2.22.1",
     "better-auth": "1.6.25",
     "canvas-confetti": "1.9.4",
     "class-variance-authority": "0.7.1",
@@ -112,5 +113,5 @@
   "engines": {
     "node": "24.x"
   },
-  "packageManager": "pnpm@11.18.0"
+  "packageManager": "pnpm@11.20.0"
 }
