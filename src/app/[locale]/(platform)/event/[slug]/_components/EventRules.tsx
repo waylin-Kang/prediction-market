@@ -333,7 +333,7 @@ export default function EventRules({ event, mode = 'accordion', showEndDate = fa
       return ''
     }
   })()
-  const formattedRules = formatRules(event.rules ?? '')
+  const formattedRules = formatRules(primaryMarket?.market_rules?.trim() || event.rules || '')
   const createdAtLabel = formatCreatedAt(event.created_at)
   const endDateLabel = formatEndDate(event.end_date)
   const normalizedResolverAddress = normalizeAddress(resolverAddress)?.toLowerCase()
@@ -509,6 +509,7 @@ export default function EventRules({ event, mode = 'accordion', showEndDate = fa
         <DirectResolutionButton
           market={primaryMarket}
           event={event}
+          resolutionSourceLabel={mirrorResolutionLabel}
           onResolutionRewardAmountChange={handleResolutionRewardAmountChange}
         />
       )}
@@ -519,7 +520,7 @@ export default function EventRules({ event, mode = 'accordion', showEndDate = fa
     return (
       <section className="grid gap-2">
         <div className="flex items-center gap-2">
-          <h4 className="text-base font-medium text-foreground">{t('Rules')}</h4>
+          <h4 className="text-base font-medium text-foreground">{t('Rules & Resolution')}</h4>
           {resolutionRewardAdornment}
         </div>
         {content}
@@ -531,7 +532,7 @@ export default function EventRules({ event, mode = 'accordion', showEndDate = fa
     <AccordionRulesPanel
       key={`${event.id}:${hasAdditionalContext ? 'with-context' : 'without-context'}`}
       initialExpanded={hasAdditionalContext}
-      title={t('Rules')}
+      title={t('Rules & Resolution')}
       titleAdornment={resolutionRewardAdornment}
     >
       {content}

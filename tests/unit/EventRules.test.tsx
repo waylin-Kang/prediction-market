@@ -36,9 +36,10 @@ vi.mock('@/lib/uma', () => ({
 }))
 
 vi.mock('@/app/[locale]/(platform)/event/[slug]/_components/DirectResolutionButton', () => ({
-  default: ({ market, onResolutionRewardAmountChange }: any) => (
+  default: ({ market, resolutionSourceLabel, onResolutionRewardAmountChange }: any) => (
     <section>
       <h4>{market.is_resolved ? 'Resolution' : 'Propose resolution'}</h4>
+      {resolutionSourceLabel && <span>{resolutionSourceLabel}</span>}
       <button type="button" onClick={() => onResolutionRewardAmountChange?.('$4')}>
         Load reward
       </button>
@@ -122,6 +123,27 @@ describe('eventRules', () => {
     expect(screen.getByText('Abelardo de la Espriella has been added as an option to this market.')).toBeInTheDocument()
   })
 
+  it('shows market-specific rules once in place of the event fallback', () => {
+    render(
+      <EventRules
+        event={createEvent({
+          rules: 'General event rules.',
+          markets: [
+            {
+              condition_id: 'condition-1',
+              market_rules: 'Resolve using the market-specific official source.',
+              outcomes: [],
+            } as any,
+          ],
+        })}
+        mode="inline"
+      />,
+    )
+
+    expect(screen.getByText('Resolve using the market-specific official source.')).toBeInTheDocument()
+    expect(screen.queryByText('General event rules.')).not.toBeInTheDocument()
+  })
+
   it('starts expanded in accordion mode when additional context exists', () => {
     render(
       <EventRules
@@ -132,13 +154,13 @@ describe('eventRules', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: 'Rules' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Rules & Resolution' })).toHaveAttribute('aria-expanded', 'true')
   })
 
   it('re-syncs the accordion expansion when the event additional context changes', () => {
     const { rerender } = render(<EventRules event={createEvent()} />)
 
-    expect(screen.getByRole('button', { name: 'Rules' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'Rules & Resolution' })).toHaveAttribute('aria-expanded', 'false')
 
     rerender(
       <EventRules
@@ -151,7 +173,7 @@ describe('eventRules', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: 'Rules' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Rules & Resolution' })).toHaveAttribute('aria-expanded', 'true')
   })
 
   it('shows the resolution reward badge for an active NegRisk direct-resolution market', () => {
@@ -166,7 +188,7 @@ describe('eventRules', () => {
               neg_risk_request_id: `0x${'b'.repeat(64)}`,
               is_active: true,
               is_resolved: false,
-              metadata: JSON.stringify({ resolution_type: 'dro_moov2' }),
+              metadata: JSON.stringify({ resolution_type: 'dro_moov2', mirror_resolution_type: 'chainlink' }),
               condition: { resolved: false },
               outcomes: [],
             } as any,
@@ -177,6 +199,7 @@ describe('eventRules', () => {
     )
 
     expect(screen.getByRole('heading', { name: 'Propose resolution' })).toBeInTheDocument()
+    expect(screen.getByText('Chainlink')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Propose resolution' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Load reward' }))
 
