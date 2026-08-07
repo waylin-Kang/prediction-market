@@ -1,6 +1,6 @@
 import type { Address, Hex } from 'viem'
 
-import { stringToHex } from 'viem'
+import { decodeErrorResult, stringToHex } from 'viem'
 
 import type { Event } from '@/types'
 
@@ -9,6 +9,7 @@ import {
   DRO_CTF_ADAPTER_V4_ADDRESS,
   NEGRISK_DRO_CTF_ADAPTER_V4_ADDRESS,
   NEGRISK_OPERATOR_DRO_ADDRESS,
+  RESOLUTION_REWARDS_ADDRESS,
 } from '@/lib/contracts'
 import { isGasFeeTooLowError } from '@/lib/transaction-fees'
 
@@ -91,13 +92,73 @@ const DIRECT_RESOLUTION_ADDRESSES = new Set(
     NEGRISK_DRO_CTF_ADAPTER_V4_ADDRESS,
   ].map((address) => address.toLowerCase()),
 )
+
+const RESOLUTION_REWARDS_MARKET_NOT_ACTIVE_SELECTOR = 'b521771a'
+const REVERT_DATA_PATTERN = /\breverted with data:\s*(0x[\da-f]+)/gi
+const DEPOSIT_WALLET_BATCH_CALL_ERROR_ABI = [
+  {
+    type: 'error',
+    name: 'BatchCallFailed',
+    inputs: [
+      { name: 'index', type: 'uint256' },
+      { name: 'target', type: 'address' },
+      { name: 'result', type: 'bytes' },
+    ],
+  },
+] as const
+const RESOLUTION_REWARDS_MARKET_NOT_ACTIVE_ERROR_ABI = [{ type: 'error', name: 'MarketNotActive', inputs: [] }] as const
+
 export type DirectResolutionErrorMessage =
   | 'Connected proposer wallet needs POL for gas before resolving this market.'
   | 'Transaction could not be sent because the gas fee is below the current network minimum.'
   | 'Wallet signature was rejected.'
   | 'You are not allowed to propose a result for this market.'
   | 'This market is already resolved.'
+  | 'Resolution rewards are not available for this market.'
   | 'Could not submit resolution.'
+
+function isMarketNotActiveRevertData(data: Hex) {
+  if (data.toLowerCase() !== `0x${RESOLUTION_REWARDS_MARKET_NOT_ACTIVE_SELECTOR}`) {
+    return false
+  }
+
+  try {
+    return (
+      decodeErrorResult({ abi: RESOLUTION_REWARDS_MARKET_NOT_ACTIVE_ERROR_ABI, data }).errorName === 'MarketNotActive'
+    )
+  } catch {
+    return false
+  }
+}
+
+function hasResolutionRewardsMarketNotActiveRevert(message: string) {
+  for (const match of message.matchAll(REVERT_DATA_PATTERN)) {
+    const revertData = match[1] as Hex | undefined
+    if (!revertData) {
+      continue
+    }
+    if (isMarketNotActiveRevertData(revertData)) {
+      return true
+    }
+
+    try {
+      const decoded = decodeErrorResult({ abi: DEPOSIT_WALLET_BATCH_CALL_ERROR_ABI, data: revertData })
+      if (decoded.errorName !== 'BatchCallFailed') {
+        continue
+      }
+      const [, target, nestedResult] = decoded.args
+      if (
+        target.toLowerCase() === RESOLUTION_REWARDS_ADDRESS.toLowerCase() &&
+        isMarketNotActiveRevertData(nestedResult)
+      ) {
+        return true
+      }
+    } catch {
+      continue
+    }
+  }
+  return false
+}
 
 function parseMarketMetadata(market: Event['markets'][number]): Record<string, unknown> {
   const metadata = market.metadata
@@ -245,6 +306,10 @@ export function readDirectResolutionError(error: unknown): DirectResolutionError
 
   if (lower.includes('already resolved')) {
     return 'This market is already resolved.'
+  }
+
+  if (lower.includes('marketnotactive') || hasResolutionRewardsMarketNotActiveRevert(message)) {
+    return 'Resolution rewards are not available for this market.'
   }
 
   return 'Could not submit resolution.'

@@ -32,6 +32,7 @@ interface ProfileOverviewCardProps {
   profile: ProfileForCards
   snapshot: PortfolioSnapshot
   actions?: ReactNode
+  resolutionHistoryAdornment?: ReactNode
   variant?: 'public' | 'portfolio'
   useDefaultUserWallet?: boolean
   enableLiveValue?: boolean
@@ -54,6 +55,7 @@ export default function ProfileOverviewCard({
   profile,
   snapshot,
   actions,
+  resolutionHistoryAdornment,
   variant = 'public',
   useDefaultUserWallet = true,
   enableLiveValue = true,
@@ -86,7 +88,6 @@ export default function ProfileOverviewCard({
   const avatarSeed = profile.portfolioAddress || profile.username || 'user'
   const avatarFallbackStyle = showPlaceholder ? getAvatarPlaceholderStyle(avatarSeed) : undefined
   const joinedText = useJoinedDateLabel(profile.joinedAt)
-
   const positionsValueLabel =
     Math.abs(positionsValue) >= 100_000
       ? formatCompactCurrency(positionsValue)
@@ -185,9 +186,12 @@ export default function ProfileOverviewCard({
                     ) : null}
                   </div>
                   <div className="min-w-0 flex-1 space-y-1">
-                    <p className="truncate text-lg/tight font-semibold sm:text-xl" title={profile.username}>
-                      {profile.username}
-                    </p>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="min-w-0 truncate text-lg/tight font-semibold sm:text-xl" title={profile.username}>
+                        {profile.username}
+                      </p>
+                      {resolutionHistoryAdornment}
+                    </div>
                     <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                       {joinedText && (
                         <span className="inline-flex items-center gap-1">

@@ -6,16 +6,12 @@ import { fetchResolutionRewardAccountProposals, fetchResolutionRewardMarket } fr
 import { ResolutionReportContextRepository } from '@/lib/db/queries/resolution-report-context'
 import { UserRepository } from '@/lib/db/queries/user'
 import { isDirectResolutionConfiguration } from '@/lib/direct-resolution'
+import { parseResolutionHistoryCount } from '@/lib/resolution-reward-history'
 
 const BYTES32_PATTERN = /^0x[\da-f]{64}$/i
 
 function jsonError(error: string, code: string, status: number) {
   return NextResponse.json({ error, code }, { status })
-}
-
-function parseHistoryCount(value: string | undefined) {
-  const parsed = Number(value)
-  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0
 }
 
 export async function GET(request: NextRequest) {
@@ -43,12 +39,13 @@ export async function GET(request: NextRequest) {
     const depositWallet = currentUser?.deposit_wallet_address?.toLowerCase() ?? null
     const accountProposals = depositWallet ? await fetchResolutionRewardAccountProposals(depositWallet) : []
     const nowSeconds = Math.floor(Date.now() / 1_000)
+    const includeResolvedProposals = rewardMarket.status === 'finalized' || Boolean(rewardMarket.resolvedAt)
     const proposals = [rewardMarket.noProposal, rewardMarket.yesProposal].filter(
       (proposal): proposal is NonNullable<typeof proposal> =>
         Boolean(proposal) &&
         proposal?.status !== 'expired' &&
         proposal?.status !== 'released' &&
-        proposal?.status !== 'resolved' &&
+        (includeResolvedProposals || proposal?.status !== 'resolved') &&
         !(
           proposal?.status === 'withdrawal_pending' &&
           proposal.withdrawalAvailableAt &&
@@ -62,10 +59,13 @@ export async function GET(request: NextRequest) {
     )
     const reporters = proposals.map((proposal) => ({
       seed: proposal.wallet.toLowerCase(),
+      wallet: proposal.wallet,
+      username: proposal.profile.username,
       image: proposal.profile.avatarUrl,
       outcome: proposal.side === 2 ? ('yes' as const) : ('no' as const),
-      historyCorrectCount: parseHistoryCount(proposal.history.correct),
-      historyIncorrectCount: parseHistoryCount(proposal.history.incorrect),
+      rewardAmount: proposal.rewardAmount,
+      historyCorrectCount: parseResolutionHistoryCount(proposal.history.correct) ?? 0,
+      historyIncorrectCount: parseResolutionHistoryCount(proposal.history.incorrect) ?? 0,
     }))
     const activeCurrentOutcome = proposals.find((proposal) => proposal.wallet.toLowerCase() === depositWallet)?.side
 

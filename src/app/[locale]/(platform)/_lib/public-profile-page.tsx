@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Route } from 'next'
 
 import { notFound } from 'next/navigation'
 import { connection } from 'next/server'
@@ -6,9 +6,12 @@ import { Suspense } from 'react'
 
 import type { SupportedLocale } from '@/i18n/locales'
 import type { CommunityProfile } from '@/lib/community-profile'
+import type { DataApiRewardAccount } from '@/lib/data-api/resolution-rewards'
 
 import PublicProfileHeroCards from '@/app/[locale]/(platform)/profile/_components/PublicProfileHeroCards'
+import PublicProfileResolutionHistory from '@/app/[locale]/(platform)/profile/_components/PublicProfileResolutionHistory'
 import PublicProfileTabs from '@/app/[locale]/(platform)/profile/_components/PublicProfileTabs'
+import PublicResolutionsList from '@/app/[locale]/(platform)/profile/_components/PublicResolutionsList'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DEFAULT_LOCALE } from '@/i18n/locales'
 import {
@@ -22,8 +25,12 @@ import { resolveCommitSha } from '@/lib/git'
 import { normalizePublicProfileSlug } from '@/lib/platform-routing'
 import { fetchPortfolioSnapshot } from '@/lib/portfolio'
 import { resolvePublicRuntimeEnv } from '@/lib/public-runtime-config.shared'
+import { fetchDisplayResolutionRewardAccount } from '@/lib/resolution-reward-display'
+import { parseResolutionHistoryCount } from '@/lib/resolution-reward-history'
 import resolveSiteUrl from '@/lib/site-url'
 import { loadRuntimeThemeState } from '@/lib/theme-settings'
+
+const PUBLIC_RESOLUTION_ACCOUNT_TIMEOUT_MS = 5_000
 
 function buildLocalizedPagePath(path: string, locale: SupportedLocale) {
   if (locale === DEFAULT_LOCALE) {
@@ -104,6 +111,7 @@ function PublicProfileTabsFallback() {
       <div className="flex items-center gap-6 border-b p-4 sm:px-6">
         <Skeleton className="h-5 w-20" />
         <Skeleton className="h-5 w-16" />
+        <Skeleton className="h-5 w-20" />
       </div>
       <div className="space-y-3 px-3 py-4">
         <Skeleton className="h-9 w-full" />
@@ -113,12 +121,87 @@ function PublicProfileTabsFallback() {
   )
 }
 
-function PublicProfileTabsSection({ userAddress }: { userAddress: string }) {
+async function PublicProfileResolutionsContent({
+  resolutionAccountPromise,
+}: {
+  resolutionAccountPromise: Promise<DataApiRewardAccount | null>
+}) {
+  const resolutionAccount = await resolutionAccountPromise
+
+  return <PublicResolutionsList resolutionAccount={resolutionAccount} />
+}
+
+function PublicProfileTabsSection({
+  userAddress,
+  resolutionAccountPromise,
+}: {
+  userAddress: string
+  resolutionAccountPromise: Promise<DataApiRewardAccount | null>
+}) {
   return (
     <Suspense fallback={<PublicProfileTabsFallback />}>
-      <PublicProfileTabs userAddress={userAddress} />
+      <PublicProfileTabs
+        userAddress={userAddress}
+        resolutionsContent={
+          <Suspense
+            fallback={
+              <div className="space-y-3 px-3 pb-4" aria-busy="true">
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-12 w-full" />
+              </div>
+            }
+          >
+            <PublicProfileResolutionsContent resolutionAccountPromise={resolutionAccountPromise} />
+          </Suspense>
+        }
+      />
     </Suspense>
   )
+}
+
+async function loadPublicResolutionAccount(wallet: string) {
+  return fetchDisplayResolutionRewardAccount(wallet, {
+    signal: AbortSignal.timeout(PUBLIC_RESOLUTION_ACCOUNT_TIMEOUT_MS),
+  }).catch((error) => {
+    console.warn('Failed to load public resolution history', { wallet, error })
+    return null
+  })
+}
+
+function buildResolutionHistory(account: DataApiRewardAccount | null, profilePath: string) {
+  const stats = account?.rewardAccountStats
+  if (!stats) {
+    return undefined
+  }
+  const correctCount = parseResolutionHistoryCount(stats.correct)
+  const incorrectCount = parseResolutionHistoryCount(stats.incorrect)
+  if (correctCount == null || incorrectCount == null || correctCount + incorrectCount <= 0) {
+    return undefined
+  }
+
+  return {
+    correctCount,
+    incorrectCount,
+    href: `${profilePath}?tab=resolutions` as Route,
+  }
+}
+
+async function PublicProfileResolutionHistorySlot({
+  resolutionAccountPromise,
+  profilePath,
+  username,
+}: {
+  resolutionAccountPromise: Promise<DataApiRewardAccount | null>
+  profilePath: string
+  username: string
+}) {
+  const resolutionHistory = buildResolutionHistory(await resolutionAccountPromise, profilePath)
+  if (!resolutionHistory) {
+    return null
+  }
+
+  return <PublicProfileResolutionHistory username={username} {...resolutionHistory} />
 }
 
 async function fetchCommunityProfileForSlug(normalized: ReturnType<typeof normalizePublicProfileSlug>) {
@@ -254,43 +337,71 @@ export async function PublicProfilePageContent({ slug }: { slug: string }) {
       notFound()
     }
 
-    const snapshot = await fetchPortfolioSnapshot(normalized.value)
-    const fallbackChartEndDate = await buildFallbackChartEndDate()
+    const resolutionAccountPromise = loadPublicResolutionAccount(normalized.value)
+    const [snapshot, fallbackChartEndDate] = await Promise.all([
+      fetchPortfolioSnapshot(normalized.value),
+      buildFallbackChartEndDate(),
+    ])
+    const profilePath = `/${resolveProfileCanonicalSlug(slug, null)}`
+    const username = 'Anon'
 
     return (
       <>
         <PublicProfileHeroCards
           profile={{
-            username: 'Anon',
+            username,
             avatarUrl: '',
             joinedAt: undefined,
             portfolioAddress: normalized.value,
           }}
           snapshot={snapshot}
           fallbackChartEndDate={fallbackChartEndDate}
+          resolutionHistoryAdornment={
+            <Suspense fallback={null}>
+              <PublicProfileResolutionHistorySlot
+                resolutionAccountPromise={resolutionAccountPromise}
+                profilePath={profilePath}
+                username={username}
+              />
+            </Suspense>
+          }
         />
-        <PublicProfileTabsSection userAddress={normalized.value} />
+        <PublicProfileTabsSection userAddress={normalized.value} resolutionAccountPromise={resolutionAccountPromise} />
       </>
     )
   }
 
   const userAddress = profile.deposit_wallet_address!
-  const snapshot = await fetchPortfolioSnapshot(userAddress)
-  const fallbackChartEndDate = await buildFallbackChartEndDate()
+  const resolutionAccountPromise = loadPublicResolutionAccount(userAddress)
+  const [snapshot, fallbackChartEndDate] = await Promise.all([
+    fetchPortfolioSnapshot(userAddress),
+    buildFallbackChartEndDate(),
+  ])
+  const profilePath = `/${resolveProfileCanonicalSlug(slug, profile.username)}`
+  const username = resolvePublicProfileDisplayUsername(profile)
 
   return (
     <>
       <PublicProfileHeroCards
         profile={{
-          username: resolvePublicProfileDisplayUsername(profile),
+          username,
           avatarUrl: profile.image,
           joinedAt: profile.created_at?.toString(),
           portfolioAddress: userAddress,
         }}
         snapshot={snapshot}
         fallbackChartEndDate={fallbackChartEndDate}
+        resolutionHistoryAdornment={
+          <Suspense fallback={null}>
+            <PublicProfileResolutionHistorySlot
+              resolutionAccountPromise={resolutionAccountPromise}
+              profilePath={profilePath}
+              username={username}
+            />
+          </Suspense>
+        }
       />
-      <PublicProfileTabsSection userAddress={userAddress} />
+      <PublicProfileTabsSection userAddress={userAddress} resolutionAccountPromise={resolutionAccountPromise} />
     </>
   )
 }

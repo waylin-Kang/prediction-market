@@ -1,8 +1,13 @@
+import { encodeErrorResult } from 'viem'
 import { describe, expect, it } from 'vitest'
 
 import type { Event } from '@/types'
 
-import { DRO_CTF_ADAPTER_V4_ADDRESS, NEGRISK_DRO_CTF_ADAPTER_V4_ADDRESS } from '@/lib/contracts'
+import {
+  DRO_CTF_ADAPTER_V4_ADDRESS,
+  NEGRISK_DRO_CTF_ADAPTER_V4_ADDRESS,
+  RESOLUTION_REWARDS_ADDRESS,
+} from '@/lib/contracts'
 import {
   getDirectResolutionAdapterAddress,
   isDirectResolutionConfiguration,
@@ -116,6 +121,55 @@ describe('direct resolution helpers', () => {
     )
     expect(readDirectResolutionError('execution reverted: unauthorized proposer')).toBe(
       'You are not allowed to propose a result for this market.',
+    )
+  })
+
+  it('keeps the nested ResolutionRewards MarketNotActive revert distinct from a resolved market', () => {
+    expect(
+      readDirectResolutionError(
+        'wallet execution error: Contract call reverted with data: 0xb09725d200000000000000000000000000000000000000000000000000000000000000010000000000000000000000001eedf578442f4c52429bb2b6449ff0872ae73be100000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000004b521771a00000000000000000000000000000000000000000000000000000000',
+      ),
+    ).toBe('Resolution rewards are not available for this market.')
+  })
+
+  it('does not classify selector-like text outside structured revert data', () => {
+    expect(
+      readDirectResolutionError(
+        'Provider diagnostic mentioned b521771a while preparing the request, but no contract revert data was returned.',
+      ),
+    ).toBe('Could not submit resolution.')
+  })
+
+  it('does not classify a selector stored inside an unrelated nested error argument', () => {
+    const unrelatedResult = encodeErrorResult({
+      abi: [{ type: 'error', name: 'UnrelatedFailure', inputs: [{ name: 'value', type: 'bytes4' }] }],
+      errorName: 'UnrelatedFailure',
+      args: ['0xb521771a'],
+    })
+    const walletError = encodeErrorResult({
+      abi: [
+        {
+          type: 'error',
+          name: 'BatchCallFailed',
+          inputs: [
+            { name: 'index', type: 'uint256' },
+            { name: 'target', type: 'address' },
+            { name: 'result', type: 'bytes' },
+          ],
+        },
+      ],
+      errorName: 'BatchCallFailed',
+      args: [1n, RESOLUTION_REWARDS_ADDRESS, unrelatedResult],
+    })
+
+    expect(readDirectResolutionError(`Contract call reverted with data: ${walletError}`)).toBe(
+      'Could not submit resolution.',
+    )
+  })
+
+  it('recognizes a top-level ResolutionRewards MarketNotActive revert', () => {
+    expect(readDirectResolutionError('Contract call reverted with data: 0xb521771a')).toBe(
+      'Resolution rewards are not available for this market.',
     )
   })
 })
