@@ -37,6 +37,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { toast } from '@/components/ui/toast'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useBalance } from '@/hooks/useBalance'
 import { usePublicRuntimeConfig } from '@/hooks/usePublicRuntimeConfig'
 import { useSignaturePromptRunner } from '@/hooks/useSignaturePromptRunner'
 import { Link } from '@/i18n/navigation'
@@ -237,6 +238,15 @@ function formatUsdcAmount(value: string) {
     return `$${formatted.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
   } catch {
     return '$0'
+  }
+}
+
+function parseUsdcAmount(value: string) {
+  try {
+    const amount = Number(formatUnits(BigInt(value), 6))
+    return Number.isFinite(amount) ? amount : null
+  } catch {
+    return null
   }
 }
 
@@ -635,6 +645,18 @@ export default function DirectResolutionButton({
   const resolutionSource = getResolutionSource(market)
   const resolutionSourceUrl = getResolutionSourceUrl(market)
   const resolutionQuestion = market.question?.trim() || market.title
+  const normalizedEventTitle = normalizeLabel(event.title)
+  const reviewMarketLabel = [market.short_title, market.title, market.question]
+    .map((label) => label?.trim())
+    .find((label) => label && normalizeLabel(label) !== normalizedEventTitle)
+  const shouldShowReviewMarket = Boolean(
+    (market.neg_risk ||
+      event.enable_neg_risk ||
+      event.neg_risk ||
+      event.neg_risk_augmented ||
+      event.neg_risk_market_id) &&
+    reviewMarketLabel,
+  )
   const normalizedResolutionQuestion = normalizeLabel(resolutionQuestion)
   const shouldShowResolutionQuestion =
     Boolean(normalizedResolutionQuestion) &&
@@ -662,6 +684,12 @@ export default function DirectResolutionButton({
   const scopedResolutionAccess =
     settledResolutionAccessScopeKeyRef.current === resolutionAccessScopeKey ? resolutionAccess : null
   const isProposalOnly = scopedResolutionAccess === false
+  const {
+    balance: depositWalletBalance,
+    isLoadingBalance: isLoadingDepositWalletBalance,
+    isBalanceError: isDepositWalletBalanceError,
+    refetchBalance: refetchDepositWalletBalance,
+  } = useBalance({ enabled: isProposalOnly && hasDeployedDepositWallet })
   const hasExistingProposal = isProposalOnly && reportSummary.currentOutcome !== null
   const canAttemptSubmit = Boolean(
     isDirect &&
@@ -739,6 +767,14 @@ export default function DirectResolutionButton({
   }, [event.sports_team_logo_urls, event.sports_teams, market, t])
   const showOutcomeImages = outcomeOptions.every((option) => Boolean(option.imageUrl))
   const selectedOutcomeOption = outcomeOptions.find((option) => option.value === selectedOutcome) ?? null
+  const bondAmount = parseUsdcAmount(reportSummary.bond)
+  const hasInsufficientBondBalance = Boolean(
+    isProposalOnly &&
+    !isLoadingDepositWalletBalance &&
+    !isDepositWalletBalanceError &&
+    bondAmount !== null &&
+    depositWalletBalance.raw < bondAmount,
+  )
   const formattedBond = formatUsdcAmount(reportSummary.bond)
   const formattedReward = formatUsdcAmount(reportSummary.rewardPool)
   const resolvedRewardPool = isResolved ? formatResolutionRewardAmount(reportSummary.rewardPool) : null
@@ -1067,6 +1103,17 @@ export default function DirectResolutionButton({
   // oxlint-enable react-you-might-not-need-an-effect/no-event-handler
 
   async function submitResolutionReport() {
+    if (isDepositWalletBalanceError) {
+      toast.error(t('Could not validate USDC balance right now.'))
+      return
+    }
+    if (hasInsufficientBondBalance) {
+      toast.error(t('Insufficient USDC balance'))
+      return
+    }
+    if (isLoadingDepositWalletBalance) {
+      return
+    }
     if (
       !authenticatedAddress ||
       !user?.address ||
@@ -1765,6 +1812,16 @@ export default function DirectResolutionButton({
               </div>
               <div className="min-w-0 flex-1">
                 <p className="line-clamp-2 text-base leading-snug font-semibold text-foreground">{event.title}</p>
+                {shouldShowReviewMarket && (
+                  <div className="mt-1 flex min-w-0 items-baseline gap-1.5">
+                    <span className="shrink-0 font-mono text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+                      {t('Market')}
+                    </span>
+                    <span className="line-clamp-2 min-w-0 text-sm leading-snug font-medium text-foreground">
+                      {reviewMarketLabel}
+                    </span>
+                  </div>
+                )}
                 {selectedOutcome && (
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <span className="font-mono text-xs font-semibold tracking-wide text-muted-foreground uppercase">
@@ -1811,6 +1868,27 @@ export default function DirectResolutionButton({
                 <p className="text-center text-xs leading-relaxed text-muted-foreground">
                   {t('You can submit only once per market and cannot change sides')}
                 </p>
+                {hasInsufficientBondBalance && (
+                  <p className="flex items-center justify-center gap-2 rounded-lg border border-orange-500/30 bg-orange-500/5 px-3 py-2 text-center text-sm font-semibold text-orange-500">
+                    <TriangleAlertIcon className="size-4 shrink-0" aria-hidden />
+                    {t('Insufficient USDC balance')}
+                  </p>
+                )}
+                {isDepositWalletBalanceError && (
+                  <div className="flex items-center justify-center gap-2 rounded-lg border border-orange-500/30 bg-orange-500/5 px-3 py-2 text-center text-sm font-semibold text-orange-500">
+                    <TriangleAlertIcon className="size-4 shrink-0" aria-hidden />
+                    <span>{t('Could not validate USDC balance right now.')}</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={isLoadingDepositWalletBalance}
+                      onClick={() => void refetchDepositWalletBalance()}
+                    >
+                      {t('Retry')}
+                    </Button>
+                  </div>
+                )}
               </>
             ) : (
               <p className="rounded-lg border border-orange-500/30 bg-orange-500/5 px-3 py-2 text-sm leading-relaxed text-orange-500">
@@ -1825,7 +1903,15 @@ export default function DirectResolutionButton({
             <Button
               type="button"
               onClick={() => void (isProposalOnly ? submitResolutionReport() : submitResolution())}
-              disabled={state === 'pending' || (isProposalOnly ? !hasDeployedDepositWallet : !connectedAddress)}
+              disabled={
+                state === 'pending' ||
+                (isProposalOnly
+                  ? !hasDeployedDepositWallet ||
+                    isLoadingDepositWalletBalance ||
+                    isDepositWalletBalanceError ||
+                    hasInsufficientBondBalance
+                  : !connectedAddress)
+              }
             >
               {state === 'pending'
                 ? t('Submitting...')

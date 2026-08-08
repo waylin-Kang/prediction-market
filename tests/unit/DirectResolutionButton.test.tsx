@@ -11,6 +11,10 @@ const mocks = vi.hoisted(() => ({
   runWithSignaturePrompt: vi.fn(),
   signAndSubmit: vi.fn(),
   signTypedDataAsync: vi.fn(),
+  balanceRaw: 1000,
+  balanceLoading: false,
+  balanceError: false,
+  refetchBalance: vi.fn(),
   user: {
     id: 'user-1',
     address: '0x1111111111111111111111111111111111111111',
@@ -62,6 +66,15 @@ vi.mock('@/hooks/usePublicRuntimeConfig', () => ({
   usePublicRuntimeConfig: () => ({ polygonRpcUrl: '' }),
 }))
 
+vi.mock('@/hooks/useBalance', () => ({
+  useBalance: () => ({
+    balance: { raw: mocks.balanceRaw, text: mocks.balanceRaw.toFixed(2), symbol: 'USDC' },
+    isLoadingBalance: mocks.balanceLoading,
+    isBalanceError: mocks.balanceError,
+    refetchBalance: mocks.refetchBalance,
+  }),
+}))
+
 vi.mock('@/hooks/useSignaturePromptRunner', () => ({
   useSignaturePromptRunner: () => ({ runWithSignaturePrompt: mocks.runWithSignaturePrompt }),
 }))
@@ -108,6 +121,10 @@ describe('DirectResolutionButton', () => {
     mocks.runWithSignaturePrompt.mockReset()
     mocks.signAndSubmit.mockReset()
     mocks.signTypedDataAsync.mockReset()
+    mocks.balanceRaw = 1000
+    mocks.balanceLoading = false
+    mocks.balanceError = false
+    mocks.refetchBalance.mockReset()
     mocks.user.id = 'user-1'
     mocks.user.address = '0x1111111111111111111111111111111111111111'
     mocks.user.deposit_wallet_address = '0x5555555555555555555555555555555555555555'
@@ -219,6 +236,116 @@ describe('DirectResolutionButton', () => {
         args: [negRiskRequestId],
       }),
     )
+  })
+
+  it('identifies the selected NegRisk market in the review dialog', async () => {
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        marketId: `0x${'a'.repeat(64)}`,
+        bond: '300000000',
+        rewardPool: '4000000',
+        lockDuration: '172800',
+        withdrawalDelay: '86400',
+        rewardEnabled: true,
+        outcomeCounts: { yes: 0, no: 0, unknown: 0 },
+        reporters: [],
+        currentOutcome: null,
+        eligibility: 'eligible',
+      }),
+    })
+    const zemaMarket = {
+      ...(market as any),
+      condition_id: 'condition-zema',
+      question_id: `0x${'d'.repeat(64)}`,
+      title: 'Romeu Zema',
+      short_title: 'Romeu Zema',
+      question: 'Will Trump endorse Romeu Zema for President of Brazil?',
+      neg_risk: false,
+      neg_risk_request_id: `0x${'e'.repeat(64)}`,
+    } as never
+    const negRiskEvent = {
+      ...(event as any),
+      title: 'Who will Trump endorse for President of Brazil?',
+      neg_risk_market_id: `0x${'f'.repeat(64)}`,
+      markets: [zemaMarket],
+    } as never
+
+    render(<DirectResolutionButton market={zemaMarket} event={negRiskEvent} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /Yes/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /I have read the market rules/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Review proposal' }))
+
+    const reviewDialog = await screen.findByRole('dialog', { name: 'Review proposal' })
+    expect(within(reviewDialog).getByText('Who will Trump endorse for President of Brazil?')).toBeInTheDocument()
+    expect(within(reviewDialog).getByText('Market')).toBeInTheDocument()
+    expect(within(reviewDialog).getByText('Romeu Zema')).toBeInTheDocument()
+  })
+
+  it('blocks a proposal in review when the Deposit Wallet cannot cover the bond', async () => {
+    mocks.balanceRaw = 299.99
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        marketId: `0x${'a'.repeat(64)}`,
+        bond: '300000000',
+        rewardPool: '4000000',
+        lockDuration: '172800',
+        withdrawalDelay: '86400',
+        rewardEnabled: true,
+        outcomeCounts: { yes: 0, no: 0, unknown: 0 },
+        reporters: [],
+        currentOutcome: null,
+        eligibility: 'eligible',
+      }),
+    })
+
+    render(<DirectResolutionButton market={market} event={event} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /Yes/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /I have read the market rules/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Review proposal' }))
+
+    const reviewDialog = await screen.findByRole('dialog', { name: 'Review proposal' })
+    expect(within(reviewDialog).getByText('Insufficient USDC balance')).toBeInTheDocument()
+    expect(within(reviewDialog).getByRole('button', { name: 'Lock $300 and propose Yes' })).toBeDisabled()
+    expect(mocks.signAndSubmit).not.toHaveBeenCalled()
+  })
+
+  it('blocks submission and allows retry when the balance read fails', async () => {
+    mocks.balanceRaw = 0
+    mocks.balanceError = true
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        marketId: `0x${'a'.repeat(64)}`,
+        bond: '300000000',
+        rewardPool: '4000000',
+        lockDuration: '172800',
+        withdrawalDelay: '86400',
+        rewardEnabled: true,
+        outcomeCounts: { yes: 0, no: 0, unknown: 0 },
+        reporters: [],
+        currentOutcome: null,
+        eligibility: 'eligible',
+      }),
+    })
+
+    render(<DirectResolutionButton market={market} event={event} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /Yes/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /I have read the market rules/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Review proposal' }))
+
+    const reviewDialog = await screen.findByRole('dialog', { name: 'Review proposal' })
+    expect(within(reviewDialog).getByText('Could not validate USDC balance right now.')).toBeInTheDocument()
+    expect(within(reviewDialog).queryByText('Insufficient USDC balance')).not.toBeInTheDocument()
+    expect(within(reviewDialog).getByRole('button', { name: 'Lock $300 and propose Yes' })).toBeDisabled()
+
+    fireEvent.click(within(reviewDialog).getByRole('button', { name: 'Retry' }))
+    expect(mocks.refetchBalance).toHaveBeenCalledOnce()
+    expect(mocks.signAndSubmit).not.toHaveBeenCalled()
   })
 
   it('shows resolved outcome names without percentages, keeps them non-interactive, and grays out the loser', async () => {
