@@ -46,6 +46,7 @@ import { MIN_LIMIT_ORDER_SHARES, MIN_MARKET_BUY_AMOUNT } from '@/lib/orders/vali
 import { POLYMARKET_MIN_MARKETABLE_BUY_AMOUNT } from '@/lib/polymarket-orders-client'
 import { PolymarketWalletUnavailableError, syncPolymarketWallet } from '@/lib/polymarket-wallet-client'
 import { resolveSportsOutcomeTeamLabel } from '@/lib/sports-team-label'
+import { calculateGrossedKuestUnitFee } from '@/lib/trading-fees'
 import { cn } from '@/lib/utils'
 import { usePolymarketWallet } from '@/stores/usePolymarketWallet'
 import { useUser } from '@/stores/useUser'
@@ -61,7 +62,7 @@ interface EventOrderPanelArbitrageProps {
   multiWalletEnabled: boolean
   siteWalletReady: boolean
   kuestBalance: number
-  kuestFeeBps: number
+  operatorShareBps: number
   isSubmitting: boolean
   submissionStep: 0 | 1 | 2 | 3
   onRequireSiteWallet: () => void
@@ -162,7 +163,7 @@ type EventOrderPanelPolymarketArbitrageProps = Pick<
   | 'multiWalletEnabled'
   | 'siteWalletReady'
   | 'kuestBalance'
-  | 'kuestFeeBps'
+  | 'operatorShareBps'
   | 'isSubmitting'
   | 'submissionStep'
   | 'onRequireSiteWallet'
@@ -175,7 +176,7 @@ function EventOrderPanelPolymarketArbitrage({
   multiWalletEnabled,
   siteWalletReady,
   kuestBalance,
-  kuestFeeBps,
+  operatorShareBps,
   isSubmitting,
   submissionStep,
   onRequireSiteWallet,
@@ -251,8 +252,6 @@ function EventOrderPanelPolymarketArbitrage({
     const noTokenId = noOutcome.token_id
     const polymarketYesTokenId = yesOutcome.polymarket_token_id!
     const polymarketNoTokenId = noOutcome.polymarket_token_id!
-    const kuestYesFeeBps = kuestFeeBps + kuestYesFeeRate.data
-    const kuestNoFeeBps = kuestFeeBps + kuestNoFeeRate.data
     const polymarketFeeRate = polymarketMarketInfo.data.feeRate
     const polymarketFeeExponent = polymarketMarketInfo.data.feeExponent
 
@@ -263,14 +262,14 @@ function EventOrderPanelPolymarketArbitrage({
           polymarketOutcome: 'NO' as const,
           kuestLevel: kuestYesAsks[0],
           polymarketLevel: polymarketNoAsks[0],
-          kuestFeeBps: kuestYesFeeBps,
+          kuestFeeSchedule: kuestYesFeeRate.data,
         },
         {
           kuestOutcome: 'NO' as const,
           polymarketOutcome: 'YES' as const,
           kuestLevel: kuestNoAsks[0],
           polymarketLevel: polymarketYesAsks[0],
-          kuestFeeBps: kuestNoFeeBps,
+          kuestFeeSchedule: kuestNoFeeRate.data,
         },
       ]
         .flatMap<ArbitragePricePreview>((direction) => {
@@ -280,7 +279,8 @@ function EventOrderPanelPolymarketArbitrage({
 
           const kuestPrice = direction.kuestLevel.priceDollars
           const polymarketPrice = direction.polymarketLevel.priceDollars
-          const kuestUnitCost = kuestPrice * (1 + Math.max(0, direction.kuestFeeBps) / 10_000)
+          const kuestUnitCost =
+            kuestPrice + calculateGrossedKuestUnitFee(kuestPrice, direction.kuestFeeSchedule, operatorShareBps)
           const polymarketUnitCost = calculatePolymarketUnitCost(
             polymarketPrice,
             polymarketFeeRate,
@@ -311,7 +311,8 @@ function EventOrderPanelPolymarketArbitrage({
           polymarketAsks: polymarketNoAsks,
           kuestBalance: availableKuestCash,
           polymarketBalance: availablePolymarketCash,
-          kuestFeeBps: kuestYesFeeBps,
+          kuestFeeSchedule: kuestYesFeeRate.data,
+          operatorShareBps,
           polymarketFeeRate,
           polymarketFeeExponent,
         },
@@ -324,7 +325,8 @@ function EventOrderPanelPolymarketArbitrage({
           polymarketAsks: polymarketYesAsks,
           kuestBalance: availableKuestCash,
           polymarketBalance: availablePolymarketCash,
-          kuestFeeBps: kuestNoFeeBps,
+          kuestFeeSchedule: kuestNoFeeRate.data,
+          operatorShareBps,
           polymarketFeeRate,
           polymarketFeeExponent,
         },
@@ -340,7 +342,7 @@ function EventOrderPanelPolymarketArbitrage({
     canQuote,
     kuestBalance,
     kuestBooks.data,
-    kuestFeeBps,
+    operatorShareBps,
     kuestNoFeeRate.data,
     kuestYesFeeRate.data,
     noOutcome,
