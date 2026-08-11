@@ -1,4 +1,4 @@
-const EMBED_SCRIPT_URL = 'https://unpkg.com/@kuestcom/embeds/dist/index.js'
+const EMBED_SCRIPT_URL = 'https://unpkg.com/@kuestcom/embeds@1.3.12/dist/embeds/market/index.js'
 
 type EmbedTheme = 'light' | 'dark'
 const CUSTOM_ELEMENT_NAME_PATTERN = /^[a-z](?:[a-z0-9-]*[a-z0-9])?$/
@@ -82,6 +82,7 @@ export function buildIframeCode(src: string, height: number, iframeTitle: string
     '\twidth="400"',
     `\theight="${height}"`,
     '\tframeBorder="0"',
+    '\tstyle="border-radius: 12px; background: transparent"',
     '/>',
   ].join('\n')
 }

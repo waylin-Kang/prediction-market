@@ -32,6 +32,12 @@ import { useAppKit } from '@/hooks/useAppKit'
 import { useDepositWalletPolling } from '@/hooks/useDepositWalletPolling'
 import { usePublicRuntimeConfig } from '@/hooks/usePublicRuntimeConfig'
 import { useSignaturePromptRunner } from '@/hooks/useSignaturePromptRunner'
+import {
+  resolveReferralExchangeReads,
+  resolveReferralSetupStatus,
+  type ReferralExchangeReadResult,
+  type ReferralSetupStatus,
+} from '@/lib/affiliate-referral'
 import { authClient } from '@/lib/auth-client'
 import { clearCommunityAuth, ensureCommunityToken, parseCommunityError } from '@/lib/community-auth'
 import {
@@ -47,6 +53,7 @@ import {
   CTF_EXCHANGE_ADDRESS,
   NEG_RISK_CTF_EXCHANGE_ADDRESS,
   UMA_NEG_RISK_ADAPTER_ADDRESS,
+  ZERO_ADDRESS,
 } from '@/lib/contracts'
 import { fetchReferralLocked } from '@/lib/exchange'
 import { SUMSUB_ENFORCEMENTS } from '@/lib/sumsub/types'
@@ -234,7 +241,11 @@ function mergeUserSettings(previous: User, settingsPatch?: Record<string, any>) 
   }
 }
 
-function useOnboardingStatus(user: User | null, requiresTradingAuthRefresh: boolean) {
+function useOnboardingStatus(
+  user: User | null,
+  requiresTradingAuthRefresh: boolean,
+  referralSetupStatus: ReferralSetupStatus,
+) {
   return useMemo(() => {
     const onboardingSettings = user?.settings?.onboarding ?? {}
     const tradingAuthSettings = user?.settings?.tradingAuth ?? null
@@ -257,7 +268,10 @@ function useOnboardingStatus(user: User | null, requiresTradingAuthRefresh: bool
     )
     const hasTokenApprovals = Boolean(tradingAuthSettings?.approvals?.enabled)
     const hasAutoRedeemApproval = Boolean(tradingAuthSettings?.autoRedeem?.enabled)
-    const tradingReady = hasDeployedDepositWallet && hasTradingAuth && hasTokenApprovals
+    const isReferralSetupPending = referralSetupStatus === 'checking'
+    const needsReferralSetup = referralSetupStatus === 'required'
+    const hasReferralSetup = !isReferralSetupPending && !needsReferralSetup
+    const tradingReady = hasDeployedDepositWallet && hasTradingAuth && hasTokenApprovals && hasReferralSetup
 
     return {
       needsUsername,
@@ -267,10 +281,12 @@ function useOnboardingStatus(user: User | null, requiresTradingAuthRefresh: bool
       isDepositWalletDeploying,
       hasTradingAuth,
       hasTokenApprovals,
+      isReferralSetupPending,
+      needsReferralSetup,
       hasAutoRedeemApproval,
       tradingReady,
     }
-  }, [requiresTradingAuthRefresh, user])
+  }, [referralSetupStatus, requiresTradingAuthRefresh, user])
 }
 
 function resolveNextOnboardingModal({
@@ -279,6 +295,8 @@ function resolveNextOnboardingModal({
   hasDeployedDepositWallet,
   hasTradingAuth,
   hasTokenApprovals,
+  isReferralSetupPending,
+  needsReferralSetup,
   allowTradingAuthPrompt,
   needsSumsub,
 }: {
@@ -287,6 +305,8 @@ function resolveNextOnboardingModal({
   hasDeployedDepositWallet: boolean
   hasTradingAuth: boolean
   hasTokenApprovals: boolean
+  isReferralSetupPending: boolean
+  needsReferralSetup: boolean
   allowTradingAuthPrompt: boolean
   needsSumsub: boolean
 }): Exclude<OnboardingModal, null> | null {
@@ -305,7 +325,10 @@ function resolveNextOnboardingModal({
   if (allowTradingAuthPrompt && !hasTradingAuth) {
     return 'enable-status'
   }
-  if (allowTradingAuthPrompt && !hasTokenApprovals) {
+  if (isReferralSetupPending) {
+    return null
+  }
+  if (allowTradingAuthPrompt && (!hasTokenApprovals || needsReferralSetup)) {
     return 'approve'
   }
   return null
@@ -447,6 +470,7 @@ function TradingOnboardingProviderContent({ children, user }: TradingOnboardingP
   const [approvalsStep, setApprovalsStep] = useState<ApprovalsStep>('idle')
   const [autoRedeemStep, setAutoRedeemStep] = useState<ApprovalsStep>('idle')
   const [requiresTradingAuthRefresh, setRequiresTradingAuthRefresh] = useState(false)
+  const [referralSetupStatus, setReferralSetupStatus] = useState<ReferralSetupStatus>('not-required')
   const [shouldContinueTradingAuthPrompt, setShouldContinueTradingAuthPrompt] = useState(false)
   const [sumsubStatus, setSumsubStatus] = useState<SumsubVerificationStatus>({
     enabled: false,
@@ -512,7 +536,59 @@ function TradingOnboardingProviderContent({ children, user }: TradingOnboardingP
     [openAppKit, signatureRejectedMessage, walletConnectorReconnectMessage],
   )
 
-  const status = useOnboardingStatus(user, requiresTradingAuthRefresh)
+  useEffect(
+    function verifyAffiliateReferralSetup() {
+      const hasReferredUser = Boolean(user?.referred_by_user_id)
+      if (!hasReferredUser) {
+        setReferralSetupStatus('not-required')
+        return
+      }
+
+      if (affiliateMetadata.isLoading) {
+        setReferralSetupStatus('checking')
+        return
+      }
+
+      const depositWalletAddress = user?.deposit_wallet_address
+      const hasAffiliateMetadata =
+        affiliateMetadata.referrerAddress !== ZERO_ADDRESS && affiliateMetadata.affiliateAddress !== ZERO_ADDRESS
+      if (!depositWalletAddress || user?.deposit_wallet_status !== 'deployed' || !hasAffiliateMetadata) {
+        setReferralSetupStatus('required')
+        return
+      }
+
+      let cancelled = false
+      setReferralSetupStatus('checking')
+      const exchanges = [CTF_EXCHANGE_ADDRESS, NEG_RISK_CTF_EXCHANGE_ADDRESS] as const
+      void Promise.all(
+        exchanges.map((exchange) => fetchReferralLocked(exchange, depositWalletAddress as `0x${string}`, viemRpcUrls)),
+      ).then((results) => {
+        if (cancelled) {
+          return
+        }
+        const resolvedStatus = resolveReferralSetupStatus(results)
+        if (results.includes(null)) {
+          console.warn('Failed to verify affiliate referral status; referral setup remains required.')
+        }
+        setReferralSetupStatus(resolvedStatus)
+      })
+
+      return () => {
+        cancelled = true
+      }
+    },
+    [
+      affiliateMetadata.affiliateAddress,
+      affiliateMetadata.isLoading,
+      affiliateMetadata.referrerAddress,
+      user?.deposit_wallet_address,
+      user?.deposit_wallet_status,
+      user?.referred_by_user_id,
+      viemRpcUrls,
+    ],
+  )
+
+  const status = useOnboardingStatus(user, requiresTradingAuthRefresh, referralSetupStatus)
   const sumsubApproved = sumsubStatus.status === 'approved'
   const sumsubRequired = sumsubStatus.effective && sumsubStatus.enforcement === 'required'
   const needsSumsub = sumsubStatus.effective && !sumsubApproved
@@ -1269,15 +1345,16 @@ function TradingOnboardingProviderContent({ children, user }: TradingOnboardingP
   ])
 
   const resolveReferralExchanges = useCallback(
-    async (depositWallet: `0x${string}`) => {
+    async (depositWallet: `0x${string}`): Promise<ReferralExchangeReadResult<`0x${string}`>> => {
       const exchanges = [CTF_EXCHANGE_ADDRESS as `0x${string}`, NEG_RISK_CTF_EXCHANGE_ADDRESS as `0x${string}`]
       const results = await Promise.all(
         exchanges.map((exchange) => fetchReferralLocked(exchange, depositWallet, viemRpcUrls)),
       )
-      if (results.includes(null)) {
-        console.warn('Failed to read referral status; skipping locked/unknown exchanges.')
+      const resolution = resolveReferralExchangeReads(exchanges, results)
+      if (!resolution.fullyChecked) {
+        console.warn('Failed to read referral status; skipping unknown exchanges until the next approval attempt.')
       }
-      return exchanges.filter((_, index) => results[index] === false)
+      return resolution
     },
     [viemRpcUrls],
   )
@@ -1394,7 +1471,16 @@ function TradingOnboardingProviderContent({ children, user }: TradingOnboardingP
     setTokenApprovalError(null)
 
     try {
-      const referralExchanges = await resolveReferralExchanges(user.deposit_wallet_address as `0x${string}`)
+      const needsReferralSetup = Boolean(user.referred_by_user_id)
+      const hasAffiliateMetadata =
+        !affiliateMetadata.isLoading &&
+        affiliateMetadata.referrerAddress !== ZERO_ADDRESS &&
+        affiliateMetadata.affiliateAddress !== ZERO_ADDRESS
+      const referralResolution =
+        needsReferralSetup && hasAffiliateMetadata
+          ? await resolveReferralExchanges(user.deposit_wallet_address as `0x${string}`)
+          : { exchangesToConfigure: [], fullyChecked: !needsReferralSetup }
+      const referralSetupComplete = !needsReferralSetup || (hasAffiliateMetadata && referralResolution.fullyChecked)
       const missingApprovalCalls = await resolveMissingApprovalCalls(user.deposit_wallet_address as `0x${string}`)
       const calls = [
         ...missingApprovalCalls,
@@ -1402,7 +1488,7 @@ function TradingOnboardingProviderContent({ children, user }: TradingOnboardingP
           referrer: affiliateMetadata.referrerAddress,
           affiliate: affiliateMetadata.affiliateAddress,
           affiliateSharePercent: affiliateMetadata.affiliateSharePercent,
-          exchanges: referralExchanges,
+          exchanges: referralResolution.exchangesToConfigure,
         }),
       ]
       const result =
@@ -1458,7 +1544,12 @@ function TradingOnboardingProviderContent({ children, user }: TradingOnboardingP
         void refreshSessionUserState()
       }
 
+      if (needsReferralSetup) {
+        setReferralSetupStatus(referralSetupComplete ? 'configured' : 'required')
+      }
+
       if (
+        referralSetupComplete &&
         status.hasDeployedDepositWallet &&
         status.hasTradingAuth &&
         sumsubLoaded &&
@@ -1780,7 +1871,7 @@ function TradingOnboardingProviderContent({ children, user }: TradingOnboardingP
         onEnableTradingAuth={handleEnableTradingAuth}
         hasDeployedDepositWallet={status.hasDeployedDepositWallet}
         hasTradingAuth={status.hasTradingAuth}
-        hasTokenApprovals={status.hasTokenApprovals}
+        hasTokenApprovals={status.hasTokenApprovals && !status.needsReferralSetup}
         approvalsStep={approvalsStep}
         tokenApprovalError={tokenApprovalError}
         onApproveTokens={handleApproveTokens}
