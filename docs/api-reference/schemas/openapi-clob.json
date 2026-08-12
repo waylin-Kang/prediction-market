@@ -3257,7 +3257,7 @@
         }
       }
     },
-    "/v1/heartbeats": {
+    "/heartbeats": {
       "post": {
         "tags": ["Heartbeats"],
         "summary": "Post a heartbeat",
