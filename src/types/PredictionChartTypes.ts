@@ -46,8 +46,14 @@ export interface PredictionChartProps {
   }
   xAxisTickFontSize?: number
   yAxisTickFontSize?: number
+  alignYAxisLabelsToChartEdge?: boolean
+  fadeYAxisEdges?: boolean
+  neutralAxisColors?: boolean
   showXAxisTopRule?: boolean
+  showXAxisTopRuleFullWidth?: boolean
+  hideYAxisMinimumLabel?: boolean
   cursorGuideTop?: number
+  cursorGuideColor?: string
   autoscale?: boolean
   showXAxis?: boolean
   showYAxis?: boolean
@@ -84,8 +90,11 @@ export interface PredictionChartProps {
   showAreaFill?: boolean
   areaFillTopOpacity?: number
   areaFillBottomOpacity?: number
+  areaFillBottomOffset?: number
   tooltipValueFormatter?: (value: number) => string
   tooltipDateFormatter?: (value: Date) => string
+  tooltipHeaderFontSize?: number
+  tooltipDateFontSize?: number
   showTooltipSeriesLabels?: boolean
   tooltipLabelVariant?: PredictionChartTooltipLabelVariant
   clampCursorToDataExtent?: boolean
