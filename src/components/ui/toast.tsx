@@ -4,19 +4,15 @@ import type { ReactNode } from 'react'
 
 import { Toast as ToastPrimitive } from '@base-ui/react/toast'
 import { CircleCheckIcon, InfoIcon, OctagonXIcon, TriangleAlertIcon, XIcon } from 'lucide-react'
-import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
-import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 
 type ToastType = 'default' | 'success' | 'info' | 'warning' | 'error' | 'loading'
 type ToastPosition = 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right'
 
 interface ToastData {
-  actionControl?: 'button' | 'switch'
-  actionOnClick?: () => void
   content?: ReactNode
   icon?: ReactNode
   image?: ReactNode
@@ -24,7 +20,6 @@ interface ToastData {
 }
 
 interface ToastActionOptions {
-  control?: 'button' | 'switch'
   label: ReactNode
   onClick: () => void
 }
@@ -64,7 +59,7 @@ function showToast(type: ToastType, title: ReactNode, options: ToastOptions = {}
           onClick: action.onClick,
         }
       : undefined,
-    data: { actionControl: action?.control, actionOnClick: action?.onClick, content, icon, image, onClick },
+    data: { content, icon, image, onClick },
     description,
     id: id === undefined ? undefined : String(id),
     priority: type === 'error' || type === 'warning' ? 'high' : 'low',
@@ -167,26 +162,6 @@ function ToastAction({ className, ...props }: ToastPrimitive.Action.Props) {
       render={<Button variant="outline" size="sm" />}
       className={cn('shrink-0', className)}
       {...props}
-    />
-  )
-}
-
-function ToastSwitchAction({ label, onActivate }: { label?: string; onActivate?: () => void }) {
-  const [activating, setActivating] = useState(false)
-
-  return (
-    <Switch
-      aria-busy={activating}
-      aria-label={label}
-      checked={activating}
-      disabled={activating}
-      onClick={() => {
-        if (activating) {
-          return
-        }
-        setActivating(true)
-        onActivate?.()
-      }}
     />
   )
 }
@@ -329,18 +304,12 @@ function ToastList() {
           {toastItem.actionProps && (
             <div
               data-slot="toast-actions"
-              className={cn('col-start-3 self-center justify-self-end', hasDescription ? 'row-start-2' : 'row-start-1')}
-            >
-              {toastItem.data?.actionControl === 'switch' ? (
-                <ToastSwitchAction
-                  label={
-                    typeof toastItem.actionProps.children === 'string' ? toastItem.actionProps.children : undefined
-                  }
-                  onActivate={toastItem.data?.actionOnClick}
-                />
-              ) : (
-                <ToastAction />
+              className={cn(
+                'col-start-3 self-center justify-self-end',
+                hasDescription ? 'row-start-2 -mr-8' : 'row-start-1',
               )}
+            >
+              <ToastAction />
             </div>
           )}
           <ToastClose />

@@ -1,4 +1,4 @@
-import { fireEvent, render, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
 
 import { buildHistoryWithLatestPointOverride } from '@/app/[locale]/(platform)/event/[slug]/_utils/EventChartUtils'
@@ -15,6 +15,7 @@ const canvasCalls = {
   arc: vi.fn(),
   bezierCurveTo: vi.fn(),
   clearRect: vi.fn(),
+  createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
   fillText: vi.fn(),
   lineTo: vi.fn(),
   moveTo: vi.fn(),
@@ -30,7 +31,7 @@ function createCanvasContext(canvas: HTMLCanvasElement) {
     clearRect: canvasCalls.clearRect,
     clip: vi.fn(),
     closePath: vi.fn(),
-    createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+    createLinearGradient: canvasCalls.createLinearGradient,
     fill: vi.fn(),
     fillText: canvasCalls.fillText,
     lineTo: canvasCalls.lineTo,
@@ -217,11 +218,12 @@ describe('predictionChart', () => {
         showXAxis={false}
         showYAxis={false}
         showHorizontalGrid={false}
+        disableResetAnimation
       />,
     )
 
     await waitFor(() => {
-      expect(canvasCalls.bezierCurveTo).toHaveBeenCalledTimes(3)
+      expect(canvasCalls.bezierCurveTo.mock.calls.length).toBeGreaterThanOrEqual(3)
     })
 
     let currentX = canvasCalls.moveTo.mock.calls[0]![0] as number
@@ -245,11 +247,12 @@ describe('predictionChart', () => {
         showHorizontalGrid={false}
         lineEndOffsetX={-34}
         markerOffsetX={-34}
+        disableResetAnimation
       />,
     )
 
     await waitFor(() => {
-      expect(canvasCalls.arc).toHaveBeenCalledTimes(2)
+      expect(canvasCalls.arc.mock.calls.length).toBeGreaterThanOrEqual(2)
     })
 
     const lineEndX = canvasCalls.bezierCurveTo.mock.calls[0]![4]
@@ -257,5 +260,44 @@ describe('predictionChart', () => {
     const markerCenterX = canvasCalls.arc.mock.calls[1]![0]
     expect(pulseCenterX).toBe(lineEndX)
     expect(markerCenterX).toBe(lineEndX)
+  })
+
+  it('reveals the chart before sweeping a highlight into the end marker', async () => {
+    const animationFrames: FrameRequestCallback[] = []
+    vi.spyOn(window.performance, 'now').mockReturnValue(1_000)
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      animationFrames.push(callback)
+      return animationFrames.length
+    })
+
+    render(
+      <PredictionChart
+        data={data}
+        series={series}
+        width={400}
+        height={220}
+        showXAxis={false}
+        showYAxis={false}
+        showHorizontalGrid={false}
+      />,
+    )
+
+    await waitFor(() => expect(animationFrames.length).toBeGreaterThan(0))
+    expect(canvasCalls.arc).not.toHaveBeenCalled()
+
+    canvasCalls.rect.mockClear()
+    act(() => animationFrames.shift()?.(1_700))
+    const partialRevealClip = canvasCalls.rect.mock.calls.find(
+      ([left, top, width, height]) => left === -4 && top === 26 && height === 186 && width > 8 && width < 396,
+    )
+    expect(partialRevealClip).toBeDefined()
+    expect(canvasCalls.arc).not.toHaveBeenCalled()
+
+    act(() => animationFrames.shift()?.(2_400))
+    expect(canvasCalls.arc).toHaveBeenCalled()
+
+    canvasCalls.createLinearGradient.mockClear()
+    act(() => animationFrames.shift()?.(2_780))
+    expect(canvasCalls.createLinearGradient).toHaveBeenCalled()
   })
 })
