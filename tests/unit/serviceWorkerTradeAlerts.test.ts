@@ -6,6 +6,7 @@ describe('trade alert service worker', () => {
 
   it('uses the deterministic notification id for operating-system deduplication', () => {
     expect(source).toContain('showNotification(alert.title || alert.message')
+    expect(source).toContain('body: alert.message')
     expect(source).toContain('tag: alert.notification_id')
     expect(source).toContain('renotify: false')
     expect(source).toContain('icon: alert.trader_avatar || alert.icon')

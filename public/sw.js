@@ -179,7 +179,7 @@ globalThis.addEventListener('push', (event) => {
         return
       }
       await globalThis.registration.showNotification(alert.title || alert.message, {
-        body: alert.market_title,
+        body: alert.message,
         icon: alert.trader_avatar || alert.icon || '/images/pwa/default-icon-192.png',
         badge: alert.badge || alert.icon || '/images/pwa/default-icon-192.png',
         image: alert.market_icon || undefined,

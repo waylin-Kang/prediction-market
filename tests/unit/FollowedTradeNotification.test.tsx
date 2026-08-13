@@ -26,7 +26,11 @@ describe('FollowedTradeNotification', () => {
   it('adds a handle marker only to usernames', () => {
     expect(formatTradeAlertTraderLabel('m.maverick')).toBe('@m.maverick')
     expect(formatTradeAlertTraderLabel('@m.maverick')).toBe('@m.maverick')
+    expect(formatTradeAlertTraderLabel('0xmeta')).toBe('@0xmeta')
     expect(formatTradeAlertTraderLabel('0x1234…abcd')).toBe('0x1234…abcd')
+    expect(formatTradeAlertTraderLabel('0x123eaa8bb77e17466c527314f24106a426fa444e')).toBe(
+      '0x123eaa8bb77e17466c527314f24106a426fa444e',
+    )
   })
 
   it('uses red for negative outcomes and renders compact event context', () => {

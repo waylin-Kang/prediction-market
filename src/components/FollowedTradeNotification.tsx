@@ -50,7 +50,8 @@ export function resolveTradeAlertOutcomeColorClass(outcome?: string | null) {
 
 export function formatTradeAlertTraderLabel(trader: string) {
   const normalized = trader.trim()
-  return !normalized || /^(?:@|0x)/i.test(normalized) ? normalized : `@${normalized}`
+  const isWalletLabel = /^0x(?:[a-f0-9]{40}|[a-f0-9]{4}…[a-f0-9]{4})$/i.test(normalized)
+  return !normalized || normalized.startsWith('@') || isWalletLabel ? normalized : `@${normalized}`
 }
 
 export function FollowedTradeSummary({

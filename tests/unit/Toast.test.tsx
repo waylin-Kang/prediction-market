@@ -60,6 +60,39 @@ describe('Toast', () => {
     expect(onAction).toHaveBeenCalledOnce()
   })
 
+  it('keeps action buttons below the message instead of squeezing its text', async () => {
+    render(<Toaster />)
+
+    act(() => {
+      toast.message('Enable push notifications', {
+        description: 'Get trade alerts from people you follow on this device.',
+        icon: <span aria-label="Push notifications" role="img" />,
+        action: { label: 'Enable', onClick: vi.fn() },
+      })
+    })
+
+    await screen.findByText('Enable push notifications')
+    expect(document.querySelector('[data-slot="toast-content"]')).toHaveClass('grid')
+    expect(document.querySelector('[data-slot="toast-body"]')).toHaveClass('col-start-2')
+    expect(document.querySelector('[data-slot="toast-actions"]')).toHaveClass('col-start-2', 'justify-self-end')
+  })
+
+  it('keeps behind toasts opaque when the stack is expanded', async () => {
+    render(<Toaster />)
+
+    act(() => {
+      toast.message('First toast')
+      toast.message('Second toast')
+    })
+
+    await screen.findByText('Second toast')
+    const contents = document.querySelectorAll('[data-slot="toast-content"]')
+    expect(contents).toHaveLength(2)
+    contents.forEach((content) => {
+      expect(content).toHaveClass('[&[data-expanded][data-behind]]:opacity-100')
+    })
+  })
+
   it('supports an entirely clickable toast without making its close button navigate', async () => {
     const onClick = vi.fn()
     render(<Toaster />)

@@ -126,7 +126,7 @@ function ToastContent({ className, ...props }: ToastPrimitive.Content.Props) {
     <ToastPrimitive.Content
       data-slot="toast-content"
       className={cn(
-        'relative flex h-full items-center gap-2.5 overflow-hidden px-4 py-3.5 pr-12 transition-opacity duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] data-behind:opacity-0 data-expanded:opacity-100',
+        'relative grid h-full grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-3 overflow-hidden px-4 py-4 pr-12 transition-opacity duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] data-behind:opacity-0 data-expanded:opacity-100 [&[data-expanded][data-behind]]:opacity-100',
         className,
       )}
       {...props}
@@ -149,7 +149,7 @@ function ToastDescription({ className, ...props }: ToastPrimitive.Description.Pr
     <ToastPrimitive.Description
       data-slot="toast-description"
       render={<div />}
-      className={cn('min-w-0 text-sm break-words text-muted-foreground', className)}
+      className={cn('line-clamp-3 min-w-0 text-sm leading-relaxed break-words text-muted-foreground', className)}
       {...props}
     />
   )
@@ -160,7 +160,7 @@ function ToastAction({ className, ...props }: ToastPrimitive.Action.Props) {
     <ToastPrimitive.Action
       data-slot="toast-action"
       render={<Button variant="outline" size="sm" />}
-      className={cn('shrink-0', className)}
+      className={cn('min-w-20 shrink-0', className)}
       {...props}
     />
   )
@@ -208,6 +208,8 @@ function ToastList() {
   return toasts.map((toastItem) => {
     const customContent = toastItem.data?.content
     const icon = toastItem.data?.icon ?? defaultToastIcon(toastItem.type)
+    const image = toastItem.data?.image
+    const hasMedia = Boolean(image || icon)
     const onClick = toastItem.data?.onClick
 
     return (
@@ -244,19 +246,31 @@ function ToastList() {
         }
       >
         <ToastContent>
-          {toastItem.data?.image}
-          {icon && (
-            <span data-slot="toast-icon" className="shrink-0 [&_svg]:pointer-events-none">
-              {icon}
+          {hasMedia && (
+            <span
+              data-slot="toast-media"
+              className="row-span-2 mt-0.5 flex shrink-0 items-center gap-2 [&_svg]:pointer-events-none"
+            >
+              {image}
+              {icon && <span data-slot="toast-icon">{icon}</span>}
             </span>
           )}
-          {customContent ?? (
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <ToastTitle />
-              {toastItem.description != null && <ToastDescription />}
+          <div
+            data-slot="toast-body"
+            className={cn('flex min-w-0 flex-col gap-1', hasMedia ? 'col-start-2' : 'col-span-2')}
+          >
+            {customContent ?? (
+              <>
+                <ToastTitle />
+                {toastItem.description != null && <ToastDescription />}
+              </>
+            )}
+          </div>
+          {toastItem.actionProps && (
+            <div data-slot="toast-actions" className={cn('justify-self-end', hasMedia ? 'col-start-2' : 'col-span-2')}>
+              <ToastAction />
             </div>
           )}
-          {toastItem.actionProps && <ToastAction />}
           <ToastClose />
         </ToastContent>
       </Toast>
