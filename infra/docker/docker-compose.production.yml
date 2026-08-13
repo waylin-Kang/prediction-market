@@ -12,23 +12,12 @@ services:
     environment:
       NODE_ENV: production
       SITE_URL: ${SITE_URL:?SITE_URL is required}
-    # Host Nginx / Cloudflare origin typically reverse-proxies to this mapping.
-    ports:
-      - '3001:3000'
     restart: unless-stopped
     healthcheck:
-      # Probe /api/health — never `/`. Homepage SSR (featured carousel) can exceed
-      # the old 5s timeout and mark the container unhealthy / stress the process.
-      # Healthcheck runs inside the container, so use container port 3000 (not host 3001).
       test:
-        [
-          CMD,
-          node,
-          -e,
-          "fetch('http://127.0.0.1:3000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
-        ]
+        [CMD, node, -e, "fetch('http://127.0.0.1:3000').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 6
       start_period: 40s
     stop_grace_period: 30s

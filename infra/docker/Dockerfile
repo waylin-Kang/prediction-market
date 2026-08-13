@@ -5,31 +5,19 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 
-ARG COMMIT_SHA=unknown
-
-ENV COMMIT_SHA=$COMMIT_SHA
-
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
-# Fumadocs MDX needs docs.config.ts + next.config.* during install/build
-# so it detects the Next.js runtime (not Vite). See:
-# https://www.fumadocs.dev/docs/deploying
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml docs.config.ts next.config.ts ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN corepack enable \
   && corepack install
 
-# Skip husky git hooks in image builds (.git is dockerignored).
-ENV HUSKY=0
 RUN pnpm install --frozen-lockfile
 
 COPY . .
-# Prefer a modest heap + host swap on small VPS. Asking for 4GiB when the
-# machine only has ~2GiB free makes Docker fail with "cannot allocate memory".
-ENV NODE_OPTIONS=--max-old-space-size=6144
-ENV BUILD_PRERENDER_PUBLIC_SHELL=false
-ENV NEXT_PRIVATE_BUILD_WORKER=1
+ARG COMMIT_SHA=unknown
+ENV COMMIT_SHA=$COMMIT_SHA
 RUN pnpm build
 RUN mkdir -p /tmp/runtime-node_modules \
   && cp -aL node_modules/postgres /tmp/runtime-node_modules/postgres
@@ -37,14 +25,10 @@ RUN mkdir -p /tmp/runtime-node_modules \
 FROM node:24-bookworm-slim AS runner
 WORKDIR /app
 
-ARG COMMIT_SHA=unknown
-
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV COMMIT_SHA=$COMMIT_SHA
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
-ENV BUILD_PRERENDER_PUBLIC_SHELL=false
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 
@@ -64,6 +48,9 @@ COPY --from=build --chown=nextjs:nodejs /app/package.json ./package.json
 COPY --from=build --chown=nextjs:nodejs /app/scripts ./scripts
 COPY --from=build --chown=nextjs:nodejs /app/src/lib/site-url.ts ./src/lib/site-url.ts
 COPY --from=build --chown=nextjs:nodejs /app/src/lib/db/migrations ./src/lib/db/migrations
+
+ARG COMMIT_SHA=unknown
+ENV COMMIT_SHA=$COMMIT_SHA
 
 USER nextjs
 
