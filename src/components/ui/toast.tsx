@@ -1,18 +1,22 @@
 'use client'
 
-import type { MouseEventHandler, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 import { Toast as ToastPrimitive } from '@base-ui/react/toast'
 import { CircleCheckIcon, InfoIcon, OctagonXIcon, TriangleAlertIcon, XIcon } from 'lucide-react'
+import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
+import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 
 type ToastType = 'default' | 'success' | 'info' | 'warning' | 'error' | 'loading'
 type ToastPosition = 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right'
 
 interface ToastData {
+  actionControl?: 'button' | 'switch'
+  actionOnClick?: () => void
   content?: ReactNode
   icon?: ReactNode
   image?: ReactNode
@@ -20,8 +24,9 @@ interface ToastData {
 }
 
 interface ToastActionOptions {
+  control?: 'button' | 'switch'
   label: ReactNode
-  onClick: MouseEventHandler<HTMLButtonElement>
+  onClick: () => void
 }
 
 interface ToastOptions {
@@ -59,7 +64,7 @@ function showToast(type: ToastType, title: ReactNode, options: ToastOptions = {}
           onClick: action.onClick,
         }
       : undefined,
-    data: { content, icon, image, onClick },
+    data: { actionControl: action?.control, actionOnClick: action?.onClick, content, icon, image, onClick },
     description,
     id: id === undefined ? undefined : String(id),
     priority: type === 'error' || type === 'warning' ? 'high' : 'low',
@@ -126,7 +131,7 @@ function ToastContent({ className, ...props }: ToastPrimitive.Content.Props) {
     <ToastPrimitive.Content
       data-slot="toast-content"
       className={cn(
-        'relative grid h-full grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-3 overflow-hidden px-4 py-4 pr-12 transition-opacity duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] data-behind:opacity-0 data-expanded:opacity-100 [&[data-expanded][data-behind]]:opacity-100',
+        'relative h-full overflow-hidden px-4 py-3.5 pr-12 transition-opacity duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] data-behind:opacity-0 data-expanded:opacity-100 [&[data-expanded][data-behind]]:opacity-100',
         className,
       )}
       {...props}
@@ -160,8 +165,28 @@ function ToastAction({ className, ...props }: ToastPrimitive.Action.Props) {
     <ToastPrimitive.Action
       data-slot="toast-action"
       render={<Button variant="outline" size="sm" />}
-      className={cn('min-w-20 shrink-0', className)}
+      className={cn('shrink-0', className)}
       {...props}
+    />
+  )
+}
+
+function ToastSwitchAction({ label, onActivate }: { label?: string; onActivate?: () => void }) {
+  const [activating, setActivating] = useState(false)
+
+  return (
+    <Switch
+      aria-busy={activating}
+      aria-label={label}
+      checked={activating}
+      disabled={activating}
+      onClick={() => {
+        if (activating) {
+          return
+        }
+        setActivating(true)
+        onActivate?.()
+      }}
     />
   )
 }
@@ -210,6 +235,8 @@ function ToastList() {
     const icon = toastItem.data?.icon ?? defaultToastIcon(toastItem.type)
     const image = toastItem.data?.image
     const hasMedia = Boolean(image || icon)
+    const hasAction = Boolean(toastItem.actionProps)
+    const hasDescription = customContent == null && toastItem.description != null
     const onClick = toastItem.data?.onClick
 
     return (
@@ -245,30 +272,75 @@ function ToastList() {
             : undefined
         }
       >
-        <ToastContent>
+        <ToastContent
+          className={cn(
+            hasAction
+              ? 'grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5'
+              : 'flex items-center gap-2.5',
+          )}
+        >
           {hasMedia && (
             <span
               data-slot="toast-media"
-              className="row-span-2 mt-0.5 flex shrink-0 items-center gap-2 [&_svg]:pointer-events-none"
+              className={cn(
+                'flex shrink-0 items-center gap-2 [&_svg]:pointer-events-none',
+                hasAction && 'col-start-1 mt-0.5',
+                hasDescription && 'row-span-2',
+              )}
             >
               {image}
               {icon && <span data-slot="toast-icon">{icon}</span>}
             </span>
           )}
-          <div
-            data-slot="toast-body"
-            className={cn('flex min-w-0 flex-col gap-1', hasMedia ? 'col-start-2' : 'col-span-2')}
-          >
-            {customContent ?? (
-              <>
+          {customContent != null ? (
+            <div
+              data-slot="toast-body"
+              className={cn('min-w-0', hasAction && (hasMedia ? 'col-start-2 col-end-3' : 'col-start-1 col-end-3'))}
+            >
+              {customContent}
+            </div>
+          ) : hasAction ? (
+            <>
+              <div
+                data-slot="toast-body"
+                className={cn(
+                  'min-w-0',
+                  hasMedia ? 'col-start-2' : 'col-start-1',
+                  hasDescription ? 'col-end-4' : 'col-end-3',
+                )}
+              >
                 <ToastTitle />
-                {toastItem.description != null && <ToastDescription />}
-              </>
-            )}
-          </div>
+              </div>
+              {hasDescription && (
+                <div
+                  data-slot="toast-description-row"
+                  className={cn('min-w-0 self-center', hasMedia ? 'col-start-2' : 'col-start-1', 'col-end-3')}
+                >
+                  <ToastDescription />
+                </div>
+              )}
+            </>
+          ) : (
+            <div data-slot="toast-body" className="flex min-w-0 flex-col gap-1">
+              <ToastTitle />
+              {toastItem.description != null && <ToastDescription />}
+            </div>
+          )}
           {toastItem.actionProps && (
-            <div data-slot="toast-actions" className={cn('justify-self-end', hasMedia ? 'col-start-2' : 'col-span-2')}>
-              <ToastAction />
+            <div
+              data-slot="toast-actions"
+              className={cn('col-start-3 self-center justify-self-end', hasDescription ? 'row-start-2' : 'row-start-1')}
+            >
+              {toastItem.data?.actionControl === 'switch' ? (
+                <ToastSwitchAction
+                  label={
+                    typeof toastItem.actionProps.children === 'string' ? toastItem.actionProps.children : undefined
+                  }
+                  onActivate={toastItem.data?.actionOnClick}
+                />
+              ) : (
+                <ToastAction />
+              )}
             </div>
           )}
           <ToastClose />

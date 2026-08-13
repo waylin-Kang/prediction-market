@@ -60,7 +60,7 @@ describe('Toast', () => {
     expect(onAction).toHaveBeenCalledOnce()
   })
 
-  it('keeps action buttons below the message instead of squeezing its text', async () => {
+  it('keeps title full-width while the description shares its row with the action', async () => {
     render(<Toaster />)
 
     act(() => {
@@ -73,8 +73,40 @@ describe('Toast', () => {
 
     await screen.findByText('Enable push notifications')
     expect(document.querySelector('[data-slot="toast-content"]')).toHaveClass('grid')
-    expect(document.querySelector('[data-slot="toast-body"]')).toHaveClass('col-start-2')
-    expect(document.querySelector('[data-slot="toast-actions"]')).toHaveClass('col-start-2', 'justify-self-end')
+    expect(document.querySelector('[data-slot="toast-body"]')).toHaveClass('col-start-2', 'col-end-4')
+    expect(document.querySelector('[data-slot="toast-description-row"]')).toHaveClass('col-start-2', 'col-end-3')
+    expect(document.querySelector('[data-slot="toast-actions"]')).toHaveClass('col-start-3', 'row-start-2')
+  })
+
+  it('keeps toasts without actions compact', async () => {
+    render(<Toaster />)
+
+    act(() => {
+      toast.success('Trade alerts enabled.')
+    })
+
+    await screen.findByText('Trade alerts enabled.')
+    expect(document.querySelector('[data-slot="toast-content"]')).toHaveClass('flex', 'py-3.5')
+    expect(document.querySelector('[data-slot="toast-content"]')).not.toHaveClass('grid')
+    expect(document.querySelector('[data-slot="toast-media"]')).not.toHaveClass('row-span-2')
+  })
+
+  it('supports a compact switch action', async () => {
+    const onAction = vi.fn()
+    render(<Toaster />)
+
+    act(() => {
+      toast.message('Enable push notifications', {
+        description: 'Get trade alerts from people you follow on this device.',
+        action: { control: 'switch', label: 'Enable', onClick: onAction },
+      })
+    })
+
+    const switchAction = await screen.findByRole('switch', { name: 'Enable' })
+    fireEvent.click(switchAction)
+    expect(onAction).toHaveBeenCalledOnce()
+    expect(switchAction).toBeChecked()
+    expect(switchAction).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('keeps behind toasts opaque when the stack is expanded', async () => {

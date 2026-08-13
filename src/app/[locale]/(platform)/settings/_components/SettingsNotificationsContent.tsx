@@ -107,7 +107,7 @@ export default function SettingsNotificationsContent({ user }: { user: User }) {
     <div className="grid gap-8">
       {status?.error && <InputError message={status.error} />}
 
-      <div className="rounded-lg border border-primary/30 bg-primary/5 p-6 shadow-sm">
+      <div className="rounded-lg border border-primary/40 p-6">
         <div className="grid gap-4">
           <div className="flex items-center gap-2">
             <BellRingIcon aria-hidden className="size-5 text-primary" />
