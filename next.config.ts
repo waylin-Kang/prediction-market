@@ -19,6 +19,7 @@ const config: NextConfig = {
   reactStrictMode: false,
   reactCompiler: true,
   compress: false,
+  trustHost: true,
   typescript: {
     ignoreBuildErrors: !!process.env.VERCEL_ENV,
   },

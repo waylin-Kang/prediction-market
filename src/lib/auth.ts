@@ -135,10 +135,13 @@ export const auth = betterAuth({
   appName: DEFAULT_THEME_SITE_NAME,
   secret: resolveBetterAuthSecret(),
   baseURL: SITE_URL,
+  trustedOrigins: [SITE_URL],
   advanced: {
     database: {
       generateId: false,
     },
+    disableCSRFCheck: true,
+    disableOriginCheck: true,
   },
   databaseHooks: {
     user: {
