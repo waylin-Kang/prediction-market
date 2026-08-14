@@ -1,11 +1,10 @@
 'use client'
 
-import type { ColumnDef } from '@tanstack/react-table'
-
 import { ArrowUpDownIcon, LanguagesIcon, SquarePenIcon } from 'lucide-react'
 import { useExtracted } from 'next-intl'
 
 import type { AdminCategoryRow } from '@/app/[locale]/admin/categories/_hooks/useAdminCategories'
+import type { DataTableColumnDef } from '@/lib/data-table'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -31,7 +30,7 @@ export function useAdminCategoryColumns({
   isUpdatingMain,
   isUpdatingHidden,
   isUpdatingHideEvents,
-}: CategoryColumnOptions): ColumnDef<AdminCategoryRow>[] {
+}: CategoryColumnOptions): DataTableColumnDef<AdminCategoryRow>[] {
   const t = useExtracted()
 
   return [

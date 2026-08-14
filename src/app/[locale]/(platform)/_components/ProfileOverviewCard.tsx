@@ -188,7 +188,7 @@ export default function ProfileOverviewCard({
                       />
                     ) : null}
                   </div>
-                  <div className="min-w-0 flex-1 space-y-2">
+                  <div className="min-w-0 flex-1 space-y-4">
                     <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center">
                       <p
                         className="w-full text-lg/tight font-semibold wrap-break-word sm:w-auto sm:min-w-0 sm:truncate sm:text-xl"

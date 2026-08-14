@@ -1,11 +1,13 @@
 'use client'
 
-import type { Table } from '@tanstack/react-table'
+import type { RowData } from '@tanstack/react-table'
 import type { ReactNode } from 'react'
 
 import { XIcon } from 'lucide-react'
 import { useExtracted } from 'next-intl'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+
+import type { DataTableInstance } from '@/lib/data-table'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,8 +15,8 @@ import { cn } from '@/lib/utils'
 
 import { DataTableViewOptions } from './DataTableViewOptions'
 
-interface DataTableToolbarProps<TData> {
-  table: Table<TData>
+interface DataTableToolbarProps<TData extends RowData> {
+  table: DataTableInstance<TData>
   search: string
   onSearchChange: (search: string) => void
   searchPlaceholder?: string
@@ -95,7 +97,7 @@ function useDebouncedSearch(search: string, onSearchChange: (search: string) => 
   }
 }
 
-function DataTableToolbarInner<TData>({
+function DataTableToolbarInner<TData extends RowData>({
   table,
   search,
   onSearchChange,
@@ -202,6 +204,6 @@ function DataTableToolbarInner<TData>({
   )
 }
 
-export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
+export function DataTableToolbar<TData extends RowData>(props: DataTableToolbarProps<TData>) {
   return <DataTableToolbarInner {...props} />
 }

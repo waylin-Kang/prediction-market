@@ -1,7 +1,5 @@
 'use client'
 
-import type { ColumnDef } from '@tanstack/react-table'
-
 import {
   ArrowUpDownIcon,
   BadgeInfoIcon,
@@ -15,6 +13,7 @@ import {
 import { useExtracted } from 'next-intl'
 
 import type { AdminEventRow } from '@/app/[locale]/admin/events/_hooks/useAdminEvents'
+import type { DataTableColumnDef } from '@/lib/data-table'
 
 import EventIconImage from '@/components/EventIconImage'
 import { Badge } from '@/components/ui/badge'
@@ -69,7 +68,7 @@ export function useAdminEventsColumns({
   onOpenResolutionReportsModal,
   onOpenSportsFinalModal,
   isUpdatingHidden,
-}: EventColumnOptions): ColumnDef<AdminEventRow>[] {
+}: EventColumnOptions): DataTableColumnDef<AdminEventRow>[] {
   const t = useExtracted()
 
   return [

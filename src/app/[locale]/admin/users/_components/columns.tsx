@@ -1,10 +1,9 @@
 'use client'
 
-import type { ColumnDef } from '@tanstack/react-table'
-
 import { ArrowUpDownIcon, MailIcon, ScanFaceIcon } from 'lucide-react'
 import { useExtracted } from 'next-intl'
 
+import type { DataTableColumnDef } from '@/lib/data-table'
 import type { SumsubStatus } from '@/lib/sumsub/types'
 
 import ProfileLink from '@/components/ProfileLink'
@@ -31,16 +30,16 @@ interface AdminUserRow {
   sumsub_status: SumsubStatus
 }
 
-export function useAdminUsersColumns(sumsubActive = false): ColumnDef<AdminUserRow>[] {
+export function useAdminUsersColumns(sumsubActive = false): DataTableColumnDef<AdminUserRow>[] {
   const t = useExtracted()
 
-  const columns: ColumnDef<AdminUserRow>[] = [
+  const columns: DataTableColumnDef<AdminUserRow>[] = [
     {
       id: 'select',
       header: ({ table }) => (
         <Checkbox
           checked={table.getIsAllPageRowsSelected()}
-          indeterminate={table.getIsSomePageRowsSelected()}
+          indeterminate={table.getIsSomePageRowsSelected() && !table.getIsAllPageRowsSelected()}
           onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
           aria-label={t('Select all')}
         />
@@ -93,7 +92,7 @@ export function useAdminUsersColumns(sumsubActive = false): ColumnDef<AdminUserR
                 </span>
               )
             },
-          } satisfies ColumnDef<AdminUserRow>,
+          } satisfies DataTableColumnDef<AdminUserRow>,
         ]
       : []),
     {

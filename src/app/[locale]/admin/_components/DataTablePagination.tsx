@@ -1,30 +1,32 @@
 'use client'
 
-import type { Table } from '@tanstack/react-table'
+import type { RowData } from '@tanstack/react-table'
 
 import { ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon } from 'lucide-react'
 import { useExtracted } from 'next-intl'
+
+import type { DataTableInstance } from '@/lib/data-table'
 
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
-interface DataTablePaginationProps<TData> {
-  table: Table<TData>
+interface DataTablePaginationProps<TData extends RowData> {
+  table: DataTableInstance<TData>
   totalCount?: number
   onPageChange?: (pageIndex: number) => void
   onPageSizeChange?: (pageSize: number) => void
 }
 
-export function DataTablePagination<TData>({
+export function DataTablePagination<TData extends RowData>({
   table,
   totalCount,
   onPageChange,
   onPageSizeChange,
 }: DataTablePaginationProps<TData>) {
   const t = useExtracted()
-  const pageIndex = table.getState().pagination.pageIndex
-  const pageSize = table.getState().pagination.pageSize
+  const pageIndex = table.state.pagination.pageIndex
+  const pageSize = table.state.pagination.pageSize
   const pageCount = table.getPageCount()
   const isServerSide = totalCount !== undefined
 

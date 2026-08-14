@@ -1,7 +1,7 @@
-import type { Table } from '@tanstack/react-table'
-
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { DataTableInstance } from '@/lib/data-table'
 
 vi.mock('next-intl', () => ({
   useExtracted: () => (key: string, values?: Record<string, string>) => {
@@ -19,7 +19,7 @@ function createTableStub() {
   return {
     getFilteredSelectedRowModel: () => ({ rows: [] }),
     getFilteredRowModel: () => ({ rows: [] }),
-  } as unknown as Table<unknown>
+  } as unknown as DataTableInstance<Record<string, unknown>>
 }
 
 function getSearchInput() {

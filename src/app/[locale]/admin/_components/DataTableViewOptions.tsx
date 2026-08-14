@@ -1,9 +1,11 @@
 'use client'
 
-import type { Table } from '@tanstack/react-table'
+import type { RowData } from '@tanstack/react-table'
 
 import { SlidersHorizontalIcon } from 'lucide-react'
 import { useExtracted } from 'next-intl'
+
+import type { DataTableInstance } from '@/lib/data-table'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -16,11 +18,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-interface DataTableViewOptionsProps<TData> {
-  table: Table<TData>
+interface DataTableViewOptionsProps<TData extends RowData> {
+  table: DataTableInstance<TData>
 }
 
-export function DataTableViewOptions<TData>({ table }: DataTableViewOptionsProps<TData>) {
+export function DataTableViewOptions<TData extends RowData>({ table }: DataTableViewOptionsProps<TData>) {
   const t = useExtracted()
 
   return (
