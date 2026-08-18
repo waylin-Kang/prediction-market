@@ -1859,6 +1859,46 @@
         }
       }
     },
+    "/clob-markets/{condition_id}": {
+      "get": {
+        "tags": ["Markets"],
+        "summary": "Get CLOB market info",
+        "description": "Returns CLOB-level parameters for a market, including tokens, tick size, fees, rewards, and RFQ status.",
+        "operationId": "getClobMarketInfo",
+        "parameters": [
+          {
+            "name": "condition_id",
+            "in": "path",
+            "required": true,
+            "description": "Condition identifier for the market.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CLOB market information.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClobMarketInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ErrorResponse"
+          },
+          "500": {
+            "$ref": "#/components/responses/ErrorResponse"
+          },
+          "default": {
+            "$ref": "#/components/responses/ErrorResponse"
+          }
+        }
+      }
+    },
     "/fees/builder-fees/{builder_code}": {
       "get": {
         "tags": ["Builder"],
@@ -3849,6 +3889,90 @@
             "type": "number",
             "format": "float",
             "description": "Minimum allowable tick size for the market."
+          }
+        }
+      },
+      "ClobMarketInfoToken": {
+        "type": "object",
+        "required": ["t", "o"],
+        "properties": {
+          "t": {
+            "type": "string",
+            "description": "Token identifier."
+          },
+          "o": {
+            "type": "string",
+            "description": "Outcome label."
+          }
+        }
+      },
+      "ClobMarketInfo": {
+        "type": "object",
+        "required": ["gst", "r", "c", "nr", "t", "mts", "mos", "fd", "mbf", "tbf", "rfqe", "ibce", "oas"],
+        "properties": {
+          "gst": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Game start time for sports markets."
+          },
+          "r": {
+            "$ref": "#/components/schemas/SamplingMarketRewards"
+          },
+          "c": {
+            "type": "string",
+            "description": "Condition identifier for the market."
+          },
+          "nr": {
+            "type": "boolean",
+            "description": "Whether the market uses negative risk."
+          },
+          "t": {
+            "type": "array",
+            "description": "Outcome tokens for the market.",
+            "items": {
+              "$ref": "#/components/schemas/ClobMarketInfoToken"
+            }
+          },
+          "mts": {
+            "type": "number",
+            "format": "double",
+            "description": "Minimum tick size."
+          },
+          "mos": {
+            "type": "number",
+            "format": "double",
+            "description": "Minimum order size."
+          },
+          "fd": {
+            "$ref": "#/components/schemas/FeeDescriptor"
+          },
+          "mbf": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Maker base fee in basis points."
+          },
+          "tbf": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Taker base fee in basis points."
+          },
+          "rfqe": {
+            "type": "boolean",
+            "description": "Whether RFQ is enabled."
+          },
+          "itode": {
+            "type": "boolean",
+            "description": "Whether taker order delay is enabled. Omitted when false."
+          },
+          "ibce": {
+            "type": "boolean",
+            "description": "Whether Blockaid checks are enabled."
+          },
+          "oas": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Minimum order age in seconds."
           }
         }
       },
