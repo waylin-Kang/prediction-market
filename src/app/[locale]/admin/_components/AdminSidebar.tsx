@@ -6,6 +6,7 @@ import type { Route } from 'next'
 import {
   BadgePercentIcon,
   CalendarIcon,
+  HandshakeIcon,
   LanguagesIcon,
   LayoutDashboardIcon,
   PlugIcon,
@@ -38,6 +39,7 @@ export default function AdminSidebar() {
       icon: LayoutDashboardIcon,
     },
     { id: 'events', label: t('Events'), href: '/admin/events' as Route, icon: CalendarIcon },
+    { id: 'market-making', label: t('Market Making'), href: '/admin/market-making' as Route, icon: HandshakeIcon },
     { id: 'users', label: t('Users'), href: '/admin/users' as Route, icon: UsersIcon },
     { id: 'affiliate', label: t('Affiliate & Fees'), href: '/admin/affiliate' as Route, icon: BadgePercentIcon },
     { id: 'general', label: t('General'), href: '/admin/general' as Route, icon: SettingsIcon },

@@ -5,14 +5,13 @@ import type {
   SignatureExecutionTx,
 } from './admin-create-event-form-types'
 
+export { isEmbeddedWalletProvider, isRpcWalletProvider } from '@/lib/wallet/eoa-transaction'
+export type { RpcWalletProvider } from '@/lib/wallet/eoa-transaction'
+
 export interface LoadedSignaturePlan {
   pending: PendingRequestItem
   prepared: PrepareResponse
   signatureTxs: SignatureExecutionTx[]
-}
-
-export interface RpcWalletProvider {
-  request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>
 }
 
 export type PreSignIndicatorState = 'idle' | 'checking' | 'ok' | 'error'
@@ -58,32 +57,6 @@ export function buildLoadedSignaturePlan(pending: PendingRequestItem): LoadedSig
 
 export function isFinalizationPendingStatus(status: string) {
   return status === 'finalized' || status === 'finalize_running' || status === 'finalize_in_progress'
-}
-
-export function isRpcWalletProvider(value: unknown): value is RpcWalletProvider {
-  return Boolean(value) && typeof value === 'object' && typeof (value as { request?: unknown }).request === 'function'
-}
-
-export function isEmbeddedWalletProvider(value: unknown): value is RpcWalletProvider {
-  if (!isRpcWalletProvider(value)) {
-    return false
-  }
-
-  const candidate = value as {
-    connectEmail?: unknown
-    connectSocial?: unknown
-    getEmail?: unknown
-    switchNetwork?: unknown
-    constructor?: { name?: string }
-  }
-
-  return (
-    candidate.constructor?.name === 'W3mFrameProvider' ||
-    (typeof candidate.connectEmail === 'function' &&
-      typeof candidate.connectSocial === 'function' &&
-      typeof candidate.getEmail === 'function' &&
-      typeof candidate.switchNetwork === 'function')
-  )
 }
 
 export function resolveChainId(value: number | string | undefined) {

@@ -6,11 +6,13 @@ export interface PublicRuntimeConfig {
   communityUrl: string
   createMarketUrl: string
   dataUrl: string
+  escrowUrl: string
   gammaUrl: string
   geoblockUrl: string
   isVercel: string
   chainId: number
   polygonRpcUrl: string
+  polymarketGammaUrl: string
   priceReferenceUrl: string
   relayerUrl: string
   reownAppKitProjectId: string
@@ -28,11 +30,13 @@ export const defaultPublicRuntimeConfig: PublicRuntimeConfig = {
   communityUrl: 'https://community.kuest.com',
   createMarketUrl: 'https://create-market.kuest.com',
   dataUrl: 'https://data-api.kuest.com',
+  escrowUrl: 'https://escrow.kuest.com',
   gammaUrl: 'https://gamma-api.kuest.com',
   geoblockUrl: 'https://geoblock.kuest.com',
   isVercel: 'false',
   chainId: AMOY_CHAIN_ID,
   polygonRpcUrl: '',
+  polymarketGammaUrl: 'https://gamma-api.polymarket.com',
   priceReferenceUrl: 'https://price-reference.kuest.com',
   relayerUrl: 'https://relayer.kuest.com',
   reownAppKitProjectId: '',
@@ -57,11 +61,16 @@ export function resolvePublicRuntimeEnv(
     communityUrl: normalizePublicRuntimeEnvValue(env.COMMUNITY_URL, defaultPublicRuntimeConfig.communityUrl),
     createMarketUrl: normalizePublicRuntimeEnvValue(env.CREATE_MARKET_URL, defaultPublicRuntimeConfig.createMarketUrl),
     dataUrl: normalizePublicRuntimeEnvValue(env.DATA_URL, defaultPublicRuntimeConfig.dataUrl),
+    escrowUrl: normalizePublicRuntimeEnvValue(env.ESCROW_URL, defaultPublicRuntimeConfig.escrowUrl),
     gammaUrl: normalizePublicRuntimeEnvValue(env.GAMMA_URL, defaultPublicRuntimeConfig.gammaUrl),
     geoblockUrl: normalizePublicRuntimeEnvValue(env.GEOBLOCK_URL, defaultPublicRuntimeConfig.geoblockUrl),
     isVercel: env.VERCEL_ENV ? 'true' : 'false',
     chainId: parseNetworkChainId(env.CHAIN_ID, defaultPublicRuntimeConfig.chainId),
     polygonRpcUrl: normalizePublicRuntimeEnvValue(env.POLYGON_RPC_URL),
+    polymarketGammaUrl: normalizePublicRuntimeEnvValue(
+      env.POLYMARKET_GAMMA_URL,
+      defaultPublicRuntimeConfig.polymarketGammaUrl,
+    ),
     priceReferenceUrl: normalizePublicRuntimeEnvValue(
       env.PRICE_REFERENCE_URL,
       defaultPublicRuntimeConfig.priceReferenceUrl,

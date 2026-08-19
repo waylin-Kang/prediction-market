@@ -52,6 +52,7 @@ import {
 import { sendWithEstimatedFeeRetry } from '@/lib/transaction-fees'
 import { cn } from '@/lib/utils'
 import { defaultViemNetwork } from '@/lib/viem-network'
+import { isEmbeddedWalletProvider, isRpcWalletProvider, type RpcWalletProvider } from '@/lib/wallet/eoa-transaction'
 import { useUser } from '@/stores/useUser'
 
 import type { SignerOption } from './admin-create-event-form-types'
@@ -76,10 +77,6 @@ interface AdminProposersDialogShellProps {
 
 interface EventCreationSignersResponse {
   data?: SignerOption[]
-}
-
-interface RpcWalletProvider {
-  request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>
 }
 
 const SINGLETON_FACTORY_ADDRESS = '0xce0042B868300000d44A59004Da54A005ffdcf9f' as Address
@@ -113,32 +110,6 @@ const SINGLETON_FACTORY_ABI = [
     stateMutability: 'nonpayable',
   },
 ] as const
-
-function isRpcWalletProvider(value: unknown): value is RpcWalletProvider {
-  return Boolean(value) && typeof value === 'object' && typeof (value as { request?: unknown }).request === 'function'
-}
-
-function isEmbeddedWalletProvider(value: unknown): value is RpcWalletProvider {
-  if (!isRpcWalletProvider(value)) {
-    return false
-  }
-
-  const candidate = value as {
-    connectEmail?: unknown
-    connectSocial?: unknown
-    getEmail?: unknown
-    switchNetwork?: unknown
-    constructor?: { name?: string }
-  }
-
-  return (
-    candidate.constructor?.name === 'W3mFrameProvider' ||
-    (typeof candidate.connectEmail === 'function' &&
-      typeof candidate.connectSocial === 'function' &&
-      typeof candidate.getEmail === 'function' &&
-      typeof candidate.switchNetwork === 'function')
-  )
-}
 
 function resolveChainId(value: number | string | undefined) {
   if (typeof value === 'number' && Number.isFinite(value)) {
