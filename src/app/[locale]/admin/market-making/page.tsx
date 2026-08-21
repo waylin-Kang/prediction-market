@@ -95,7 +95,8 @@ export default async function AdminMarketMakingPage() {
         verificationUnavailable: t('Verification is temporarily unavailable.'),
         saveChanges: t('Save changes'),
         marketMaking: t('Market Making'),
-        operatorVerificationPending: t('Check your inbox to verify the account email, then return here.'),
+        operatorVerificationPending: t('Check your inbox to verify your email.'),
+        accountEmailRequired: t('An account email is required.'),
         accountSettings: t('Profile Settings'),
       }}
       campaignsCopy={{

@@ -163,6 +163,7 @@ interface MarketMakingCopy {
   saveChanges: string
   marketMaking: string
   operatorVerificationPending: string
+  accountEmailRequired: string
   accountSettings: string
 }
 
@@ -1956,6 +1957,10 @@ function NotificationSettingsButton({ copy, locale }: { copy: MarketMakingCopy; 
     setNonEmailPreferences([])
     setSettingsWallet(null)
     setLoading(false)
+    if (!hasAccountEmail) {
+      setSettingsWallet(requestWallet)
+      return
+    }
     if (!isConnected || !address || !signingWalletClient) {
       setError(copy.walletNotReady)
       return
@@ -2085,22 +2090,16 @@ function NotificationSettingsButton({ copy, locale }: { copy: MarketMakingCopy; 
                 />
               </div>
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">{copy.emailDescription}</p>
-          )}
-          {error && (
+          ) : null}
+          {!hasAccountEmail ? (
             <p className="text-sm text-destructive">
-              {error}
-              {error === copy.operatorVerificationPending ? (
-                <>
-                  {' '}
-                  <Link href="/settings/account" className="underline underline-offset-4">
-                    {copy.accountSettings}
-                  </Link>
-                </>
-              ) : null}
+              {copy.accountEmailRequired}{' '}
+              <Link href="/settings" className="underline underline-offset-4">
+                {copy.accountSettings}
+              </Link>
             </p>
-          )}
+          ) : null}
+          {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>
             <Button
               type="button"
