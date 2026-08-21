@@ -56,6 +56,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { usePublicRuntimeConfig } from '@/hooks/usePublicRuntimeConfig'
 import { useSignaturePromptRunner } from '@/hooks/useSignaturePromptRunner'
+import { Link } from '@/i18n/navigation'
 import { COLLATERAL_TOKEN_ADDRESS, MARKET_MAKER_ESCROW_ADDRESS, POLY_SYNCER_CREATOR_ADDRESS } from '@/lib/contracts'
 import {
   linkSponsorEmail,
@@ -65,6 +66,7 @@ import {
   updateNotificationSettings,
 } from '@/lib/kuest-notifications'
 import { MARKET_MAKER_ESCROW_ABI } from '@/lib/market-maker-escrow'
+import { hasUsableUserEmail } from '@/lib/user-email'
 import { cn } from '@/lib/utils'
 import { resolveViemNetworkByChainId } from '@/lib/viem-network'
 import { isRecoverableWalletConnectorError, isUserRejectedRequestError } from '@/lib/wallet'
@@ -76,6 +78,7 @@ import {
   resolveWalletChainId,
   type RpcWalletProvider,
 } from '@/lib/wallet/eoa-transaction'
+import { useUser } from '@/stores/useUser'
 
 interface MarketMakingCopy {
   eyebrow: string
@@ -159,6 +162,8 @@ interface MarketMakingCopy {
   verificationUnavailable: string
   saveChanges: string
   marketMaking: string
+  operatorVerificationPending: string
+  accountSettings: string
 }
 
 interface MarketMakingDiscoveryProps {
@@ -1890,7 +1895,8 @@ function CampaignDialog({
   )
 }
 
-function NotificationSettingsButton({ copy }: { copy: MarketMakingCopy }) {
+function NotificationSettingsButton({ copy, locale }: { copy: MarketMakingCopy; locale: string }) {
+  const user = useUser()
   const { address, isConnected } = useAppKitAccount()
   const { walletProvider } = useAppKitProvider<RpcWalletProvider>('eip155')
   const { data: walletClient } = useWalletClient()
@@ -1899,7 +1905,6 @@ function NotificationSettingsButton({ copy }: { copy: MarketMakingCopy }) {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [emailVerified, setEmailVerified] = useState(false)
   const [maskedEmail, setMaskedEmail] = useState<string | null>(null)
   const [campaignStatus, setCampaignStatus] = useState(true)
   const [newOpportunities, setNewOpportunities] = useState(true)
@@ -1936,14 +1941,17 @@ function NotificationSettingsButton({ copy }: { copy: MarketMakingCopy }) {
       transport: custom(walletProvider),
     })
   }, [address, chainId, walletClient, walletProvider])
-  const hasCurrentSettings = Boolean(address) && emailVerified && settingsWallet === address?.toLowerCase()
+  const hasLoadedSettings = Boolean(address) && settingsWallet === address?.toLowerCase()
+  const operatorDomain = typeof window === 'undefined' ? '' : window.location.hostname.toLowerCase()
+  const accountEmail = user?.email?.trim() ?? ''
+  const hasAccountEmail = hasUsableUserEmail(accountEmail)
+  const hasCurrentSettings = hasLoadedSettings && hasAccountEmail
 
   async function loadSettings() {
     const requestId = ++settingsRequestId.current
     const requestWallet = address?.toLowerCase() ?? null
     setOpen(true)
     setError(null)
-    setEmailVerified(false)
     setMaskedEmail(null)
     setNonEmailPreferences([])
     setSettingsWallet(null)
@@ -1967,7 +1975,6 @@ function NotificationSettingsButton({ copy }: { copy: MarketMakingCopy }) {
       if (settingsRequestId.current !== requestId || activeAddress.current?.toLowerCase() !== requestWallet) {
         return
       }
-      setEmailVerified(settings.emailVerified)
       setMaskedEmail(settings.maskedEmail ?? null)
       const campaignPreference = settings.preferences?.find(
         (preference) => preference.channel === 'email' && preference.topic === 'campaign_status',
@@ -1998,6 +2005,22 @@ function NotificationSettingsButton({ copy }: { copy: MarketMakingCopy }) {
     setSaving(true)
     setError(null)
     try {
+      const linkResult = await runWithSignaturePrompt(
+        () =>
+          linkSponsorEmail({
+            notificationsUrl,
+            wallet: address as `0x${string}`,
+            walletClient: signingWalletClient,
+            email: accountEmail,
+            locale,
+            siteDomain: operatorDomain,
+          }),
+        { title: copy.notificationSettings, description: copy.transactionPrompt },
+      )
+      if (!linkResult.alreadyVerified) {
+        setError(copy.operatorVerificationPending)
+        return
+      }
       await runWithSignaturePrompt(
         () =>
           updateNotificationSettings({
@@ -2065,7 +2088,19 @@ function NotificationSettingsButton({ copy }: { copy: MarketMakingCopy }) {
           ) : (
             <p className="text-sm text-muted-foreground">{copy.emailDescription}</p>
           )}
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && (
+            <p className="text-sm text-destructive">
+              {error}
+              {error === copy.operatorVerificationPending ? (
+                <>
+                  {' '}
+                  <Link href="/settings/account" className="underline underline-offset-4">
+                    {copy.accountSettings}
+                  </Link>
+                </>
+              ) : null}
+            </p>
+          )}
           <DialogFooter>
             <Button
               type="button"
@@ -2130,7 +2165,7 @@ export default function MarketMakingDiscovery({
               {copy.campaignsTab}
             </TabsTrigger>
           </TabsList>
-          <NotificationSettingsButton copy={copy} />
+          <NotificationSettingsButton copy={copy} locale={locale} />
         </div>
 
         <TabsContent value="sponsor" className="mt-5">
