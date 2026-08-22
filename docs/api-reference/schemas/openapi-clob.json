@@ -3912,7 +3912,7 @@
       },
       "ClobMarketInfo": {
         "type": "object",
-        "required": ["gst", "r", "c", "nr", "t", "mts", "mos", "fd", "mbf", "tbf", "rfqe", "ibce", "oas"],
+        "required": ["gst", "r", "c", "creator", "nr", "t", "mts", "mos", "fd", "mbf", "tbf", "rfqe", "ibce", "oas"],
         "properties": {
           "gst": {
             "type": "string",
@@ -3926,6 +3926,11 @@
           "c": {
             "type": "string",
             "description": "Condition identifier for the market."
+          },
+          "creator": {
+            "type": "string",
+            "nullable": true,
+            "description": "Lowercase wallet address that created the condition."
           },
           "mirror_condition_id": {
             "type": "string",
@@ -4882,6 +4887,7 @@
           "minimum_order_size",
           "minimum_tick_size",
           "condition_id",
+          "creator",
           "status",
           "neg_risk",
           "market_id",
@@ -4936,6 +4942,11 @@
           "condition_id": {
             "type": "string",
             "description": "Condition identifier for the market."
+          },
+          "creator": {
+            "type": "string",
+            "nullable": true,
+            "description": "Lowercase wallet address that created the condition."
           },
           "mirror_condition_id": {
             "type": "string",
@@ -5156,6 +5167,7 @@
           "minimum_order_size",
           "minimum_tick_size",
           "condition_id",
+          "creator",
           "question_id",
           "question",
           "description",
@@ -5203,6 +5215,11 @@
           },
           "condition_id": {
             "type": "string"
+          },
+          "creator": {
+            "type": "string",
+            "nullable": true,
+            "description": "Lowercase wallet address that created the condition."
           },
           "mirror_condition_id": {
             "type": "string",
@@ -5304,6 +5321,7 @@
         "type": "object",
         "required": [
           "condition_id",
+          "creator",
           "status",
           "neg_risk",
           "market_id",
@@ -5322,6 +5340,11 @@
           "condition_id": {
             "type": "string",
             "description": "Condition identifier for the market."
+          },
+          "creator": {
+            "type": "string",
+            "nullable": true,
+            "description": "Lowercase wallet address that created the condition."
           },
           "mirror_condition_id": {
             "type": "string",
@@ -5410,11 +5433,16 @@
       },
       "MarketByTokenResponse": {
         "type": "object",
-        "required": ["condition_id", "primary_token_id", "secondary_token_id"],
+        "required": ["condition_id", "creator", "primary_token_id", "secondary_token_id"],
         "properties": {
           "condition_id": {
             "type": "string",
             "description": "Condition identifier for the parent market."
+          },
+          "creator": {
+            "type": "string",
+            "nullable": true,
+            "description": "Lowercase wallet address that created the condition."
           },
           "mirror_condition_id": {
             "type": "string",
