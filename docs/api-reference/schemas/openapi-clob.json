@@ -4937,6 +4937,10 @@
             "type": "string",
             "description": "Condition identifier for the market."
           },
+          "mirror_condition_id": {
+            "type": "string",
+            "description": "Polymarket condition identifier paired with `condition_id`. Omitted when the market is not a Polymarket mirror."
+          },
           "status": {
             "type": "string",
             "description": "Market status."
@@ -5014,7 +5018,7 @@
           "tokens": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/SamplingMarketToken"
+              "$ref": "#/components/schemas/MirroredSamplingMarketToken"
             }
           },
           "tags": {
