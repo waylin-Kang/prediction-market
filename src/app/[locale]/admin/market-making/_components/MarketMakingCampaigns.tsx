@@ -15,7 +15,7 @@ import {
   ShieldAlertIcon,
   XIcon,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatUnits, keccak256, stringToHex } from 'viem'
 import { usePublicClient, useWalletClient } from 'wagmi'
 
@@ -714,12 +714,20 @@ export default function MarketMakingCampaigns({ locale, copy }: Props) {
   const publicClient = usePublicClient({ chainId })
   const [filter, setFilter] = useState<EscrowCampaignStatusFilter>('all')
   const [search, setSearch] = useState('')
+  const [linkedCampaignId, setLinkedCampaignId] = useState<string | null>(null)
+  const [lookupId, setLookupId] = useState<string | null>(null)
   const [selected, setSelected] = useState<MarketMakingCampaignRecord | null>(null)
   const [cancelCampaign, setCancelCampaign] = useState<MarketMakingCampaignRecord | null>(null)
   const [disputeCampaign, setDisputeCampaign] = useState<MarketMakingCampaignRecord | null>(null)
   const [disputeReason, setDisputeReason] = useState<DisputeReason | null>(null)
   const [isMutating, setIsMutating] = useState(false)
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
+  useEffect(() => {
+    const value = new URLSearchParams(window.location.search).get('campaign')
+    setLinkedCampaignId(value && /^(0|[1-9][0-9]*)$/.test(value) ? value : null)
+  }, [])
+  const validLinkedCampaignId = linkedCampaignId && /^(0|[1-9][0-9]*)$/.test(linkedCampaignId) ? linkedCampaignId : null
+  const lookupCampaignId = lookupId ?? validLinkedCampaignId
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 30_000)
     return () => window.clearInterval(interval)
@@ -736,16 +744,42 @@ export default function MarketMakingCampaigns({ locale, copy }: Props) {
       return (await response.json()) as MarketMakingCampaignsResponse
     },
   })
+  const campaignLookupQuery = useQuery({
+    queryKey: ['market-making-campaign', lookupCampaignId],
+    enabled: Boolean(lookupCampaignId),
+    queryFn: async () => {
+      const params = new URLSearchParams({ campaign: lookupCampaignId! })
+      const response = await fetch(`/admin/api/market-making/campaigns?${params}`, { cache: 'no-store' })
+      if (response.status === 404) {
+        return { data: [] } satisfies MarketMakingCampaignsResponse
+      }
+      if (!response.ok) {
+        throw new Error(copy.loadError)
+      }
+      return (await response.json()) as MarketMakingCampaignsResponse
+    },
+  })
+  const handledCampaignId = useRef<string | null>(null)
   useEffect(() => {
-    const latestCampaigns = campaignsQuery.data?.data
-    if (!latestCampaigns) {
-      return
+    if (lookupCampaignId) {
+      setSearch(lookupCampaignId)
     }
+  }, [lookupCampaignId])
+  useEffect(() => {
+    const latestCampaigns = [...(campaignLookupQuery.data?.data ?? []), ...(campaignsQuery.data?.data ?? [])]
     const latestById = new Map(latestCampaigns.map((campaign) => [campaign.id, campaign]))
     setSelected((current) => (current ? (latestById.get(current.id) ?? null) : current))
     setCancelCampaign((current) => (current ? (latestById.get(current.id) ?? null) : current))
     setDisputeCampaign((current) => (current ? (latestById.get(current.id) ?? null) : current))
-  }, [campaignsQuery.data?.data])
+    if (lookupCampaignId && handledCampaignId.current !== lookupCampaignId) {
+      const linkedCampaign = latestById.get(lookupCampaignId)
+      if (linkedCampaign) {
+        handledCampaignId.current = lookupCampaignId
+        setSearch(lookupCampaignId)
+        setSelected(linkedCampaign)
+      }
+    }
+  }, [campaignLookupQuery.data?.data, campaignsQuery.data?.data, lookupCampaignId])
   const pendingWithdrawalsQuery = useQuery({
     queryKey: ['market-making-pending-withdrawals', address?.toLowerCase()],
     enabled: Boolean(address && publicClient),
@@ -765,7 +799,11 @@ export default function MarketMakingCampaigns({ locale, copy }: Props) {
   })
   const campaigns = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase()
-    return (campaignsQuery.data?.data ?? []).filter((campaign) => {
+    const allCampaigns = new Map<string, MarketMakingCampaignRecord>()
+    for (const campaign of [...(campaignLookupQuery.data?.data ?? []), ...(campaignsQuery.data?.data ?? [])]) {
+      allCampaigns.set(campaign.id, campaign)
+    }
+    return [...allCampaigns.values()].filter((campaign) => {
       const effectiveStatus = getEffectiveCampaignStatus(campaign.status, campaign.serviceEnd, now)
       if (!matchesStatus(effectiveStatus, filter)) {
         return false
@@ -774,11 +812,12 @@ export default function MarketMakingCampaigns({ locale, copy }: Props) {
         return true
       }
       return (
+        campaign.id.toLowerCase().includes(normalizedSearch) ||
         campaign.title.toLowerCase().includes(normalizedSearch) ||
         campaign.markets.some((market) => market.title?.toLowerCase().includes(normalizedSearch))
       )
     })
-  }, [campaignsQuery.data?.data, filter, now, search])
+  }, [campaignLookupQuery.data?.data, campaignsQuery.data?.data, filter, now, search])
   const filters: Array<{ id: EscrowCampaignStatusFilter; label: string }> = [
     { id: 'all', label: copy.all },
     { id: 'open', label: copy.open },
@@ -790,6 +829,11 @@ export default function MarketMakingCampaigns({ locale, copy }: Props) {
   ]
   const pendingWithdrawalAtomic = pendingWithdrawalsQuery.data ?? '0'
   const hasPendingWithdrawal = BigInt(pendingWithdrawalAtomic) > 0n
+  const hasBulkCampaignData = (campaignsQuery.data?.data.length ?? 0) > 0
+  const hasLookupCampaignData = (campaignLookupQuery.data?.data.length ?? 0) > 0
+  const isLoading = campaignsQuery.isLoading || (campaignLookupQuery.isLoading && !hasBulkCampaignData)
+  const isError =
+    (campaignsQuery.isError && !hasLookupCampaignData) || (campaignLookupQuery.isError && !hasBulkCampaignData)
   const reasons: Array<{ id: DisputeReason; label: string }> = [
     { id: 'liquidity_unavailable', label: copy.liquidityUnavailable },
     { id: 'spread_exceeded', label: copy.spreadExceeded },
@@ -797,6 +841,25 @@ export default function MarketMakingCampaigns({ locale, copy }: Props) {
     { id: 'maker_stopped', label: copy.makerStopped },
     { id: 'other', label: copy.other },
   ]
+
+  function resetCampaignLookup() {
+    handledCampaignId.current = null
+    setLookupId(null)
+    setLinkedCampaignId(null)
+  }
+
+  function closeCampaignDetail() {
+    setSelected(null)
+    resetCampaignLookup()
+  }
+
+  async function refreshCampaignData() {
+    await Promise.all([
+      campaignsQuery.refetch(),
+      pendingWithdrawalsQuery.refetch(),
+      ...(lookupCampaignId ? [campaignLookupQuery.refetch()] : []),
+    ])
+  }
 
   async function writeCampaign(functionName: 'cancelCampaign' | 'openDispute', campaign: MarketMakingCampaignRecord) {
     if (!isConnected || !address || !walletClient) {
@@ -833,7 +896,7 @@ export default function MarketMakingCampaigns({ locale, copy }: Props) {
       if (receipt.status !== 'success') {
         throw new Error(copy.transactionFailed)
       }
-      await Promise.all([campaignsQuery.refetch(), pendingWithdrawalsQuery.refetch()])
+      await refreshCampaignData()
       toast.success(functionName === 'cancelCampaign' ? copy.refundReadyToWithdraw : copy.transactionConfirmed)
       return true
     } catch (error) {
@@ -875,7 +938,7 @@ export default function MarketMakingCampaigns({ locale, copy }: Props) {
       if (receipt.status !== 'success') {
         throw new Error(copy.transactionFailed)
       }
-      await Promise.all([campaignsQuery.refetch(), pendingWithdrawalsQuery.refetch()])
+      await refreshCampaignData()
       toast.success(copy.transactionConfirmed)
     } catch (error) {
       if (isUserRejectedRequestError(error)) {
@@ -896,7 +959,21 @@ export default function MarketMakingCampaigns({ locale, copy }: Props) {
           <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              const value = event.target.value
+              setSearch(value)
+              if (!/^(0|[1-9][0-9]*)$/.test(value.trim())) {
+                resetCampaignLookup()
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                const value = search.trim()
+                if (/^(0|[1-9][0-9]*)$/.test(value)) {
+                  setLookupId(value)
+                }
+              }
+            }}
             placeholder={copy.search}
             className="pl-9"
           />
@@ -932,21 +1009,21 @@ export default function MarketMakingCampaigns({ locale, copy }: Props) {
         </div>
       </div>
 
-      {campaignsQuery.isLoading && (
+      {isLoading && (
         <div className="flex items-center justify-center gap-2 py-20 text-sm text-muted-foreground">
           <LoaderCircleIcon className="size-4 animate-spin" />
           {copy.waiting}
         </div>
       )}
-      {campaignsQuery.isError && <div className="py-20 text-center text-sm text-destructive">{copy.loadError}</div>}
-      {!campaignsQuery.isLoading && !campaignsQuery.isError && campaigns.length === 0 && (
+      {isError && <div className="py-20 text-center text-sm text-destructive">{copy.loadError}</div>}
+      {!isLoading && !isError && campaigns.length === 0 && (
         <div className="py-20 text-center">
           <CircleDollarSignIcon className="mx-auto size-7 text-muted-foreground" />
           <h2 className="mt-4 font-semibold">{copy.noCampaigns}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{copy.noCampaignsDescription}</p>
         </div>
       )}
-      {campaigns.length > 0 && (
+      {!isLoading && !isError && campaigns.length > 0 && (
         <Table>
           <TableHeader>
             <TableRow>
@@ -1010,7 +1087,7 @@ export default function MarketMakingCampaigns({ locale, copy }: Props) {
           locale={locale}
           copy={copy}
           open
-          onOpenChange={(open) => !open && setSelected(null)}
+          onOpenChange={(open) => !open && closeCampaignDetail()}
           onCancel={() => setCancelCampaign(selected)}
           onDispute={() => {
             setDisputeReason(null)
@@ -1039,7 +1116,7 @@ export default function MarketMakingCampaigns({ locale, copy }: Props) {
               onClick={async () => {
                 if (cancelCampaign && (await writeCampaign('cancelCampaign', cancelCampaign))) {
                   setCancelCampaign(null)
-                  setSelected(null)
+                  closeCampaignDetail()
                 }
               }}
             >
@@ -1089,7 +1166,7 @@ export default function MarketMakingCampaigns({ locale, copy }: Props) {
               onClick={async () => {
                 if (disputeCampaign && disputeReason && (await writeCampaign('openDispute', disputeCampaign))) {
                   setDisputeCampaign(null)
-                  setSelected(null)
+                  closeCampaignDetail()
                 }
               }}
             >
