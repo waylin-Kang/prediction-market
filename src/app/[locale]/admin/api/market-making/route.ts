@@ -15,6 +15,14 @@ import { POLY_SYNCER_CREATOR_ADDRESS } from '@/lib/contracts'
 import { UserRepository } from '@/lib/db/queries/user'
 import { events, markets, outcomes } from '@/lib/db/schema/events/tables'
 import { db } from '@/lib/drizzle'
+import {
+  filterEligiblePolymarketEvents,
+  gammaSeriesMetadata,
+  getPolymarketEndDateMin,
+  getPolymarketRequestLimit,
+  kuestSeriesMetadata,
+  recurringConditionIds,
+} from '@/lib/market-making-discovery'
 import { resolvePublicRuntimeEnv } from '@/lib/public-runtime-config.shared'
 import { readResponseBodyWithLimit } from '@/lib/read-response-body-with-limit'
 import { getPublicAssetUrl } from '@/lib/storage'
@@ -67,6 +75,11 @@ interface GammaEvent {
   showMarketImages?: boolean
   showMarketIcons?: boolean
   markets?: GammaMarket[]
+  seriesSlug?: string
+  series_slug?: string
+  seriesRecurrence?: string
+  series_recurrence?: string
+  series?: Array<{ slug?: string; recurrence?: string }>
 }
 
 interface GammaSearchResponse {
@@ -102,33 +115,6 @@ function normalizeAddress(value: unknown) {
 function resolveImageUrl(value: string | null | undefined) {
   const normalized = value?.trim()
   return normalized ? getPublicAssetUrl(normalized) || null : null
-}
-
-function isOpenGammaMarket(market: GammaMarket, now: number) {
-  if (!market.conditionId || market.closed === true || market.active === false || market.acceptingOrders === false) {
-    return false
-  }
-  const endTimestamp = market.endDate ? Date.parse(market.endDate) : Number.NaN
-  return !Number.isFinite(endTimestamp) || endTimestamp > now
-}
-
-function marketEndsAfter(market: GammaMarket, minimumEnd: number, eventEndDate?: string) {
-  const endTimestamp = Date.parse(market.endDate || eventEndDate || '')
-  return Number.isFinite(endTimestamp) && endTimestamp >= minimumEnd
-}
-
-function uniqueGammaEvents(eventsToDedupe: GammaEvent[]) {
-  const seen = new Set<string>()
-  return eventsToDedupe.filter((event) => {
-    const key = String(event.id ?? event.slug ?? '')
-      .trim()
-      .toLowerCase()
-    if (!key || seen.has(key)) {
-      return false
-    }
-    seen.add(key)
-    return true
-  })
 }
 
 async function parseLimitedJson(response: Response) {
@@ -167,7 +153,7 @@ async function loadEligibilityWindows() {
   }
 }
 
-async function fetchPolymarketEvents(search: string, limit: number, minimumEnd: number) {
+async function fetchPolymarketEvents(search: string, limit: number, minimumEnd: number, seriesMinimumEnd: number) {
   const { polymarketGammaUrl } = resolvePublicRuntimeEnv(process.env)
   const endpoint = new URL(search ? '/public-search' : '/events', polymarketGammaUrl)
   if (search) {
@@ -181,10 +167,13 @@ async function fetchPolymarketEvents(search: string, limit: number, minimumEnd: 
     endpoint.searchParams.set('search_profiles', 'false')
     endpoint.searchParams.set('search_tags', 'false')
   } else {
-    endpoint.searchParams.set('limit', String(limit))
+    endpoint.searchParams.set('limit', String(getPolymarketRequestLimit(search, limit)))
     endpoint.searchParams.set('closed', 'false')
     endpoint.searchParams.set('active', 'true')
-    endpoint.searchParams.set('end_date_min', new Date(minimumEnd).toISOString())
+    const endDateMin = getPolymarketEndDateMin(search, minimumEnd, seriesMinimumEnd)
+    if (endDateMin) {
+      endpoint.searchParams.set('end_date_min', endDateMin)
+    }
     endpoint.searchParams.set('order', 'createdAt')
     endpoint.searchParams.set('ascending', 'false')
     endpoint.searchParams.set('include_chat', 'false')
@@ -208,20 +197,16 @@ async function fetchPolymarketEvents(search: string, limit: number, minimumEnd: 
       : []
   const now = Date.now()
 
-  return uniqueGammaEvents(gammaEvents)
-    .flatMap((event) => {
-      if (event.closed === true || event.active === false) {
-        return []
-      }
-      const openMarkets = (event.markets ?? []).filter((market) => isOpenGammaMarket(market, now))
-      return openMarkets.length > 0 && openMarkets.every((market) => marketEndsAfter(market, minimumEnd, event.endDate))
-        ? [{ ...event, markets: openMarkets }]
-        : []
-    })
-    .slice(0, limit)
+  return filterEligiblePolymarketEvents(gammaEvents, now, minimumEnd, seriesMinimumEnd, limit) as GammaEvent[]
 }
 
-async function listKuestEvents(search: string, excludedCreatorAddresses: string[], limit: number, minimumEnd: Date) {
+async function listKuestEvents(
+  search: string,
+  excludedCreatorAddresses: string[],
+  limit: number,
+  minimumEnd: Date,
+  seriesMinimumEnd: Date,
+) {
   const searchTerm = search.trim()
   const searchCondition = searchTerm
     ? or(
@@ -242,7 +227,10 @@ async function listKuestEvents(search: string, excludedCreatorAddresses: string[
     eq(markets.is_active, true),
     eq(markets.is_resolved, false),
     eq(events.is_hidden, false),
-    gt(markets.end_time, minimumEnd),
+    or(
+      gt(markets.end_time, minimumEnd),
+      and(sql`TRIM(COALESCE(${events.series_slug}, '')) <> ''`, gt(markets.end_time, seriesMinimumEnd)),
+    ),
   )
 
   const eventRows = await db
@@ -254,6 +242,8 @@ async function listKuestEvents(search: string, excludedCreatorAddresses: string[
       endDate: events.end_date,
       creator: events.creator,
       showMarketIcons: events.show_market_icons,
+      seriesSlug: events.series_slug,
+      seriesRecurrence: events.series_recurrence,
       storedVolume24h: sql<number>`COALESCE(SUM(${markets.volume_24h}), 0)`,
       storedVolume: sql<number>`COALESCE(SUM(${markets.volume}), 0)`,
     })
@@ -268,6 +258,8 @@ async function listKuestEvents(search: string, excludedCreatorAddresses: string[
       events.end_date,
       events.creator,
       events.show_market_icons,
+      events.series_slug,
+      events.series_recurrence,
     )
     .orderBy(desc(sql`COALESCE(SUM(${markets.volume_24h}), 0)`), desc(sql`COALESCE(SUM(${markets.volume}), 0)`))
     .limit(limit)
@@ -304,10 +296,23 @@ async function listKuestEvents(search: string, excludedCreatorAddresses: string[
   return { eventRows, marketRows }
 }
 
-async function loadPolymarketMappings(conditionIds: string[], minimumEnd: Date) {
+async function loadPolymarketMappings(
+  conditionIds: string[],
+  minimumEnd: Date,
+  seriesMinimumEnd: Date,
+  seriesConditionIds: string[],
+) {
   if (conditionIds.length === 0) {
     return new Map<string, string>()
   }
+
+  const endCondition =
+    seriesConditionIds.length > 0
+      ? or(
+          gt(markets.end_time, minimumEnd),
+          and(inArray(markets.polymarket_condition_id, seriesConditionIds), gt(markets.end_time, seriesMinimumEnd)),
+        )
+      : gt(markets.end_time, minimumEnd)
 
   const rows = await db
     .select({
@@ -322,7 +327,7 @@ async function loadPolymarketMappings(conditionIds: string[], minimumEnd: Date) 
         eq(markets.is_active, true),
         eq(markets.is_resolved, false),
         eq(events.is_hidden, false),
-        gt(markets.end_time, minimumEnd),
+        endCondition,
       ),
     )
 
@@ -431,14 +436,21 @@ export async function GET(request: NextRequest) {
     const eligibility = await loadEligibilityWindows()
     const now = Date.now()
     const kuestMinimumEnd = new Date(now + eligibility.kuestSeconds * 1_000)
+    const seriesMinimumEnd = new Date(now + 10_800_000)
 
     const shouldLoadKuest = source !== 'polymarket'
     const shouldLoadPolymarket = source === 'all' || source === 'polymarket'
     const kuestPromise = shouldLoadKuest
-      ? listKuestEvents(search, source === 'mine' ? polySyncerCreatorAddresses : [], limit, kuestMinimumEnd)
+      ? listKuestEvents(
+          search,
+          source === 'mine' ? polySyncerCreatorAddresses : [],
+          limit,
+          kuestMinimumEnd,
+          seriesMinimumEnd,
+        )
       : Promise.resolve({ eventRows: [], marketRows: [] })
     const polymarketPromise = shouldLoadPolymarket
-      ? fetchPolymarketEvents(search, limit, now + eligibility.polymarketSeconds * 1_000)
+      ? fetchPolymarketEvents(search, limit, now + eligibility.polymarketSeconds * 1_000, seriesMinimumEnd.getTime())
       : Promise.resolve([])
     const [{ eventRows: kuestEventRows, marketRows: kuestMarketRows }, polymarketEvents] = await Promise.all([
       kuestPromise,
@@ -448,7 +460,12 @@ export async function GET(request: NextRequest) {
     const polymarketIds = polymarketEvents.flatMap((event) =>
       (event.markets ?? []).flatMap((market) => (market.conditionId ? [market.conditionId.trim().toLowerCase()] : [])),
     )
-    const mapping = await loadPolymarketMappings(polymarketIds, kuestMinimumEnd)
+    const mapping = await loadPolymarketMappings(
+      polymarketIds,
+      kuestMinimumEnd,
+      seriesMinimumEnd,
+      recurringConditionIds(polymarketEvents),
+    )
 
     let clobMetrics = new Map<string, { liquidity: number; volume: number; volume24h: number }>()
     let volumeSource: MarketMakingDiscoveryResponse['volumeSource'] = 'database'
@@ -513,6 +530,8 @@ export async function GET(request: NextRequest) {
           needsDeployment: false,
           isNegRisk: false,
           showMarketIcons: event.showMarketIcons ?? true,
+          ...kuestSeriesMetadata(event.seriesSlug, event.seriesRecurrence),
+          creatorFilter: normalizeAddress(event.creator) || null,
         } satisfies MarketMakingDiscoveryItem,
       ]
     })
@@ -548,6 +567,7 @@ export async function GET(request: NextRequest) {
         return []
       }
       const isOnKuest = eventMarkets.every((market) => Boolean(market.kuestConditionId))
+      const series = gammaSeriesMetadata(event)
       const eventKey = String(event.id ?? event.slug ?? eventMarkets[0]!.conditionId)
       return [
         {
@@ -574,6 +594,9 @@ export async function GET(request: NextRequest) {
           needsDeployment: !isOnKuest,
           isNegRisk: event.negRisk === true || (event.markets ?? []).some((market) => market.negRisk === true),
           showMarketIcons: event.showMarketImages ?? event.showMarketIcons ?? true,
+          seriesSlug: series.slug,
+          seriesRecurrence: series.recurrence,
+          creatorFilter: POLY_SYNCER_CREATOR_ADDRESS.toLowerCase(),
         } satisfies MarketMakingDiscoveryItem,
       ]
     })
