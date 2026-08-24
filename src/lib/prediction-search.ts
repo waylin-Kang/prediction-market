@@ -1,6 +1,6 @@
 import type { PlatformNavigationTag } from '@/lib/platform-navigation'
 
-import { isDynamicHomeCategorySlug } from '@/lib/platform-routing'
+import { isDynamicHomeCategorySlug, PLATFORM_RESERVED_MAIN_CATEGORY_SLUGS } from '@/lib/platform-routing'
 
 export interface SearchCategoryMatch {
   href: string
@@ -190,7 +190,9 @@ export function resolvePredictionSearchContext(tags: PlatformNavigationTag[], sl
   }
 
   for (const tag of tags) {
-    if (!isDynamicHomeCategorySlug(tag.slug)) {
+    const normalizedTagSlug = tag.slug.trim().toLowerCase()
+    const isDedicatedSportsCategory = PLATFORM_RESERVED_MAIN_CATEGORY_SLUGS.has(normalizedTagSlug)
+    if (!isDynamicHomeCategorySlug(normalizedTagSlug) && !isDedicatedSportsCategory) {
       continue
     }
 
