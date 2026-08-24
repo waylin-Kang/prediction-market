@@ -528,6 +528,7 @@ function CampaignDetail({
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <StatusBadge status={effectiveStatus} copy={copy} expired={isExpired} />
+              <span className="font-mono">#{campaign.id}</span>
               {campaign.marketCount > 1 && (
                 <span>{replaceCount(copy.campaignNumber, campaign.marketCount, locale)}</span>
               )}
@@ -965,6 +966,9 @@ export default function MarketMakingCampaigns({ locale, copy }: Props) {
                 campaign.status === ESCROW_CAMPAIGN_STATUS.open &&
                 campaign.marketMaker === ZERO_ADDRESS &&
                 now >= campaign.acceptDeadline
+              const marketMakerLabel =
+                compactAddress(campaign.marketMaker) ??
+                (effectiveStatus === ESCROW_CAMPAIGN_STATUS.open && !isExpired ? copy.waiting : '—')
               return (
                 <TableRow key={campaign.id} className="cursor-pointer" onClick={() => setSelected(campaign)}>
                   <TableCell className="max-w-64 whitespace-normal">
@@ -983,7 +987,7 @@ export default function MarketMakingCampaigns({ locale, copy }: Props) {
                   <TableCell>
                     <StatusBadge status={effectiveStatus} copy={copy} expired={isExpired} />
                   </TableCell>
-                  <TableCell>{compactAddress(campaign.marketMaker) ?? copy.waiting}</TableCell>
+                  <TableCell>{marketMakerLabel}</TableCell>
                   <TableCell>{termsSummary(campaign, locale)}</TableCell>
                   <TableCell className="font-medium">{formatUsdc(campaign.rewardAtomic, locale)}</TableCell>
                   <TableCell>{remainingLabel(campaign, now, locale, copy)}</TableCell>
