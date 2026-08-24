@@ -970,7 +970,11 @@ export default function MarketMakingCampaigns({ locale, copy }: Props) {
               if (event.key === 'Enter') {
                 const value = search.trim()
                 if (/^(0|[1-9][0-9]*)$/.test(value)) {
-                  setLookupId(value)
+                  if (lookupCampaignId === value) {
+                    void campaignLookupQuery.refetch()
+                  } else {
+                    setLookupId(value)
+                  }
                 }
               }
             }}
