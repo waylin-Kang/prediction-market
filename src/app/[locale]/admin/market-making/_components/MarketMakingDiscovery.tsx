@@ -68,6 +68,7 @@ import {
 import { MARKET_MAKER_ESCROW_ABI } from '@/lib/market-maker-escrow'
 import {
   buildMarketMakerQuoteInput,
+  marketImportStorageKey,
   requiredSponsorBalanceAtomic,
   sponsorshipDurationSubtitle,
 } from '@/lib/market-making-series'
@@ -216,6 +217,7 @@ interface EscrowPreviewResponse {
 
 interface EscrowConfigResponse {
   pricingConfig: {
+    acceptDeadlineLeadSeconds?: number
     baseCoverageBps?: number
     defaultServiceStartDelaySeconds?: number
     minimumServiceDurationSeconds?: number
@@ -424,10 +426,11 @@ function getMarketEndDate(item: MarketMakingDiscoveryItem) {
   return fallback
 }
 
-function getMinimumServiceEndDate(config: EscrowConfigResponse | undefined) {
+function getMinimumServiceEndDate(config: EscrowConfigResponse | undefined, recurringAnchor: boolean) {
   const pricing = config?.pricingConfig
-  const minimumSeconds =
-    (pricing?.defaultServiceStartDelaySeconds ?? 86_400) + (pricing?.minimumServiceDurationSeconds ?? 86_400)
+  const minimumSeconds = recurringAnchor
+    ? (pricing?.acceptDeadlineLeadSeconds ?? 3_600) * 3
+    : (pricing?.defaultServiceStartDelaySeconds ?? 86_400) + (pricing?.minimumServiceDurationSeconds ?? 86_400)
   return new Date(Date.now() + minimumSeconds * 1_000)
 }
 
@@ -1060,18 +1063,28 @@ function CampaignDialog({
   }
   const marketEndDate = getMarketEndDate(item)
   const initialServiceEnd = marketEndDate
+  const [sponsorSeries, setSponsorSeries] = useState(false)
+  const polymarketConditionIds = useMemo(
+    () => item.markets.flatMap((market) => (market.polymarketConditionId ? [market.polymarketConditionId] : [])),
+    [item.markets],
+  )
+  const seriesUsesPolymarketDeployments =
+    sponsorSeries &&
+    item.hedgeAvailable &&
+    item.creatorFilter?.toLowerCase() === POLY_SYNCER_CREATOR_ADDRESS.toLowerCase() &&
+    polymarketConditionIds.length === item.markets.length
+  const usesImportFlow = item.needsDeployment || seriesUsesPolymarketDeployments
   const quoteConditionIds = useMemo(
     () =>
       item.markets.flatMap((market) => {
-        const conditionId = item.needsDeployment ? market.polymarketConditionId : market.kuestConditionId
+        const conditionId = usesImportFlow ? market.polymarketConditionId : market.kuestConditionId
         return conditionId ? [conditionId] : []
       }),
-    [item.markets, item.needsDeployment],
+    [item.markets, usesImportFlow],
   )
   const [depth, setDepth] = useState(1000)
   const [spread, setSpread] = useState(300)
   const [serviceEnd, setServiceEnd] = useState(initialServiceEnd)
-  const [sponsorSeries, setSponsorSeries] = useState(false)
   const [calendarOpen, setCalendarOpen] = useState(false)
   const [issuedQuote, setIssuedQuote] = useState<EscrowIssuedQuoteResponse | null>(null)
   const [issueError, setIssueError] = useState<string | null>(null)
@@ -1089,7 +1102,14 @@ function CampaignDialog({
   const emailLinkRequestId = useRef(0)
   const activeEmailWallet = useRef(address)
   const importStorageKey =
-    address && item.slug ? `kuest-market-import:${chainId}:${address.toLowerCase()}:${item.slug}` : null
+    address && item.slug
+      ? marketImportStorageKey({
+          chainId,
+          wallet: address,
+          eventSlug: item.slug,
+          sponsorSeries,
+        })
+      : null
   const importPaymentStorageKey = importStorageKey ? `${importStorageKey}:payment` : null
   const [pendingImportPaymentHash, setPendingImportPaymentHash] = useState<string | null>(null)
 
@@ -1108,7 +1128,7 @@ function CampaignDialog({
       buildMarketMakerQuoteInput({
         sponsor: address ?? '',
         importId,
-        marketSource: item.needsDeployment ? 'polymarket' : 'kuest',
+        marketSource: usesImportFlow ? 'polymarket' : 'kuest',
         conditionIds: quoteConditionIds,
         depthPerSideAtomic: (BigInt(depth) * USDC_ATOMIC_SCALE).toString(),
         maxSpreadBps: spread,
@@ -1122,12 +1142,12 @@ function CampaignDialog({
       depth,
       item.creatorFilter,
       importId,
-      item.needsDeployment,
       item.seriesSlug,
       quoteConditionIds,
       serviceEnd,
       sponsorSeries,
       spread,
+      usesImportFlow,
     ],
   )
   const configQuery = useQuery({
@@ -1137,7 +1157,7 @@ function CampaignDialog({
     retry: false,
     queryFn: () => fetchEscrowJson<EscrowConfigResponse>(`${escrowBaseUrl}/api/config`),
   })
-  const minimumServiceEndDate = getMinimumServiceEndDate(configQuery.data)
+  const minimumServiceEndDate = getMinimumServiceEndDate(configQuery.data, Boolean(item.seriesSlug))
   const hasSelectableServiceWindow = sponsorSeries
     ? Boolean(item.seriesSlug && item.creatorFilter)
     : marketEndDate >= minimumServiceEndDate
@@ -1152,7 +1172,6 @@ function CampaignDialog({
     enabled: canRequestQuote,
     staleTime: 15_000,
     retry: false,
-    placeholderData: (previousData) => previousData,
     queryFn: () =>
       fetchEscrowJson<EscrowPreviewResponse>(`${escrowBaseUrl}/api/quote/preview`, {
         method: 'POST',
@@ -1167,17 +1186,22 @@ function CampaignDialog({
     configQuery.data?.pricingConfig.terms?.minimumTwoSidedCoverageBps ??
     configQuery.data?.pricingConfig.baseCoverageBps ??
     null
+  const fallbackServiceStart =
+    Math.floor(Date.now() / 1_000) +
+    (item.seriesSlug
+      ? (configQuery.data?.pricingConfig.acceptDeadlineLeadSeconds ?? 3_600) * 2
+      : (configQuery.data?.pricingConfig.defaultServiceStartDelaySeconds ?? 86_400))
   const serviceDurationDays = preview
     ? Math.max(1, Math.ceil((preview.serviceEnd - preview.serviceStart) / (24 * 60 * 60)))
-    : null
+    : Math.max(1, Math.ceil((Math.floor(serviceEnd.getTime() / 1_000) - fallbackServiceStart) / (24 * 60 * 60)))
   const marketCountLabel =
     item.markets.length > 1 ? formatCountTemplate(copy.marketCount, item.markets.length, locale) : null
   const importReady = importValue !== null && ['ready', 'activated'].includes(importValue.state)
   const costs = preview?.costs ?? null
   const initialDeploymentFeeAtomic = importValue?.costs.initialDeploymentFeeAtomic ?? costs?.initialDeploymentFeeAtomic
-  const deploymentFeePending = item.needsDeployment && !(importValue?.costs.initialDeploymentFeePaid ?? false)
+  const deploymentFeePending = usesImportFlow && !(importValue?.costs.initialDeploymentFeePaid ?? false)
   const importPaymentRequired =
-    item.needsDeployment &&
+    usesImportFlow &&
     !pendingImportPaymentHash &&
     (!importValue || importValue.state === 'awaiting_payment' || importValue.state === 'expired')
   const requiredBalanceAtomic = costs
@@ -1210,7 +1234,7 @@ function CampaignDialog({
     sponsorBalanceQuery.data < requiredBalanceAtomic
 
   useEffect(() => {
-    if (!open || !item.needsDeployment || !importStorageKey) {
+    if (!open || !usesImportFlow || !importStorageKey) {
       return
     }
     const stored = window.localStorage.getItem(importStorageKey)
@@ -1221,7 +1245,7 @@ function CampaignDialog({
     if (storedPayment?.startsWith('0x')) {
       setPendingImportPaymentHash(storedPayment)
     }
-  }, [importPaymentStorageKey, importStorageKey, item.needsDeployment, open])
+  }, [importPaymentStorageKey, importStorageKey, open, usesImportFlow])
 
   const importQuery = useQuery({
     queryKey: ['market-making-import', escrowBaseUrl, importId],
@@ -1376,7 +1400,7 @@ function CampaignDialog({
     try {
       let activeImport = importValue
       let createdImportNow = false
-      if (item.needsDeployment) {
+      if (usesImportFlow) {
         if (!item.slug) {
           throw new Error(copy.marketDataUnavailable)
         }
@@ -1403,7 +1427,12 @@ function CampaignDialog({
           activeImport = await fetchEscrowJson<EscrowImportResponse>(`${escrowBaseUrl}/api/imports`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sponsor: address, eventSlug: item.slug, conditionIds: quoteConditionIds }),
+            body: JSON.stringify({
+              sponsor: address,
+              eventSlug: item.slug,
+              conditionIds: quoteConditionIds,
+              ...('series' in quoteInput ? { series: quoteInput.series } : {}),
+            }),
           })
           setImportId(activeImport.importId)
           setImportValue(activeImport)
@@ -1470,7 +1499,7 @@ function CampaignDialog({
         }
       }
 
-      if (item.needsDeployment && !activeImport) {
+      if (usesImportFlow && !activeImport) {
         throw new Error(copy.quoteUnavailable)
       }
 
@@ -1478,14 +1507,14 @@ function CampaignDialog({
         issuedQuote && issuedQuote.quote.validUntil > Math.floor(Date.now() / 1000) + 15
           ? issuedQuote
           : await fetchEscrowJson<EscrowIssuedQuoteResponse>(
-              item.needsDeployment
+              usesImportFlow
                 ? `${escrowBaseUrl}/api/imports/${activeImport?.importId}/quote`
                 : `${escrowBaseUrl}/api/quote`,
               {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(
-                  item.needsDeployment
+                  usesImportFlow
                     ? {
                         sponsor: address,
                         depthPerSideAtomic: quoteInput.depthPerSideAtomic,
@@ -1780,6 +1809,12 @@ function CampaignDialog({
               checked={sponsorSeries}
               onCheckedChange={(checked) => {
                 setSponsorSeries(checked)
+                if (!checked) {
+                  setServiceEnd(marketEndDate)
+                }
+                setImportId(null)
+                setImportValue(null)
+                setPendingImportPaymentHash(null)
                 clearIssuedQuote()
               }}
             />
@@ -1818,7 +1853,7 @@ function CampaignDialog({
                   <span className="text-muted-foreground">{copy.kuestFee}</span>
                   <span className="font-medium">{formatUsdcString(breakdown.protocolFee, locale)}</span>
                 </div>
-                {item.needsDeployment && (
+                {usesImportFlow && (
                   <div className="flex items-center justify-between gap-4">
                     <span className="text-muted-foreground">{copy.importEvent}</span>
                     <span className="font-medium">{formatUsdcAtomic(initialDeploymentFeeAtomic, locale)}</span>

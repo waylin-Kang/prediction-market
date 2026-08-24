@@ -12,12 +12,48 @@ import {
 import {
   buildMarketMakerQuoteInput,
   displayedCostAtomic,
+  marketImportStorageKey,
   requiredSponsorBalanceAtomic,
   seriesMarketDataSummary,
   sponsorshipDurationSubtitle,
 } from '@/lib/market-making-series'
 
 describe('series market-making helpers', () => {
+  it('preserves legacy event import keys and isolates series imports', () => {
+    const params = {
+      chainId: 80002,
+      wallet: '0x00000000000000000000000000000000000000AB',
+      eventSlug: 'bitcoin-up-or-down',
+    }
+
+    expect(marketImportStorageKey({ ...params, sponsorSeries: false })).toBe(
+      'kuest-market-import:80002:0x00000000000000000000000000000000000000ab:bitcoin-up-or-down',
+    )
+    expect(marketImportStorageKey({ ...params, sponsorSeries: true })).toBe(
+      'kuest-market-import:80002:0x00000000000000000000000000000000000000ab:bitcoin-up-or-down:series',
+    )
+  })
+
+  it('keeps the selected event end when series sponsorship is disabled', () => {
+    expect(
+      buildMarketMakerQuoteInput({
+        sponsor: '0x0000000000000000000000000000000000000002',
+        importId: null,
+        marketSource: 'polymarket',
+        conditionIds: ['0x' + '11'.repeat(32)],
+        depthPerSideAtomic: '1000000000',
+        maxSpreadBps: 300,
+        serviceEnd: 2_000_000_000,
+        sponsorSeries: false,
+        seriesSlug: 'btc-up-or-down-daily',
+        creatorFilter: '0x0000000000000000000000000000000000000004',
+      }),
+    ).toMatchObject({
+      marketSource: 'polymarket',
+      serviceEnd: 2_000_000_000,
+    })
+  })
+
   it('builds the canonical series quote payload', () => {
     expect(
       buildMarketMakerQuoteInput({
