@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { ActivityOrder } from '@/types'
+
 import { GET as getEventActivity } from '@/app/api/event-activity/route'
 import { EVENT_ACTIVITY_REFRESH_SIZE, fetchEventTrades } from '@/lib/data-api/trades'
 
@@ -83,6 +85,118 @@ describe('fetchEventTrades', () => {
     expect(dataApiUrl.searchParams.get('cursorTimestamp')).toBe('1786017600')
     expect(dataApiUrl.searchParams.get('cursorId')).toBe('fill-9')
     expect(dataApiUrl.searchParams.get('cursorUser')).toBe('0xabc')
+  })
+
+  it('keeps up to 50 markets in one request and only splits the overflow', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(
+        async () => new Response(JSON.stringify([]), { headers: { 'content-type': 'application/json' }, status: 200 }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await fetchEventTrades({
+      marketIds: Array.from({ length: 50 }, (_, index) => `condition-${index}`),
+      pageParam: 0,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    fetchMock.mockClear()
+    await fetchEventTrades({
+      marketIds: Array.from({ length: 51 }, (_, index) => `condition-${index}`),
+      pageParam: 0,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const marketCounts = fetchMock.mock.calls.map(([input]) => {
+      const requestUrl = new URL(String(input), 'https://example.com')
+      return requestUrl.searchParams.get('market')?.split(',').length
+    })
+    expect(marketCounts).toEqual([50, 1])
+  })
+
+  it('merges same-second batches using the Data API keyset ordering', async () => {
+    process.env.DATA_URL = 'https://data-api.test'
+    function activity(id: string, eventId: string, address: string): ActivityOrder {
+      return {
+        id,
+        event_id: eventId,
+        user: { id: address, username: address, address, image: '' },
+        side: 'buy',
+        amount: '0',
+        price: '0',
+        outcome: { index: 0, text: 'Outcome' },
+        market: { title: 'Market', slug: 'market', icon_url: '' },
+        total_value: 0,
+        created_at: new Date(100_000).toISOString(),
+        status: 'completed',
+      }
+    }
+    const fetchMock = vi.fn().mockImplementation(async (input: string | URL | Request) => {
+      const requestUrl = new URL(
+        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url,
+        'https://example.com',
+      )
+      const market = requestUrl.searchParams.get('market')
+      const activities = market?.split(',').includes('condition-0')
+        ? [
+            activity('trade-event-2', 'event-2', '0x0000000000000000000000000000000000000001'),
+            activity('trade-event-1-a', 'event-1', '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'),
+          ]
+        : [
+            activity('trade-event-10', 'event-10', '0x0000000000000000000000000000000000000002'),
+            activity('trade-event-1-b', 'event-1', '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+          ]
+      return Response.json(activities)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const activities = await fetchEventTrades({
+      marketIds: ['condition-0', ...Array.from({ length: 49 }, (_, index) => `condition-${index + 1}`), 'condition-50'],
+      pageParam: 0,
+      pageSize: 50,
+    })
+
+    expect(activities.map((activity) => `${activity.event_id}:${activity.user.address.toLowerCase()}`)).toEqual([
+      'event-2:0x0000000000000000000000000000000000000001',
+      'event-10:0x0000000000000000000000000000000000000002',
+      'event-1:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      'event-1:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    ])
+  })
+
+  it('forwards start only when explicitly requested', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify([]), { headers: { 'content-type': 'application/json' }, status: 200 }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await fetchEventTrades({ marketIds: ['condition-1'], pageParam: 0, start: 1_786_017_600 })
+
+    const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]), 'https://example.com')
+    expect(requestUrl.searchParams.get('start')).toBe('1786017600')
+  })
+
+  it('limits market batch concurrency without changing the logical result', async () => {
+    let activeRequests = 0
+    let maxActiveRequests = 0
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      activeRequests += 1
+      maxActiveRequests = Math.max(maxActiveRequests, activeRequests)
+      await new Promise((resolve) => setTimeout(resolve, 1))
+      activeRequests -= 1
+      return new Response(JSON.stringify([]), { headers: { 'content-type': 'application/json' }, status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await fetchEventTrades({
+      marketIds: Array.from({ length: 251 }, (_, index) => `condition-${index}`),
+      pageParam: 0,
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(6)
+    expect(maxActiveRequests).toBe(4)
   })
 
   it.each(['cursorId', 'cursorUser'])('rejects a whitespace-only %s in the event activity proxy', async (field) => {

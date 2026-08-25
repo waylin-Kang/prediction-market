@@ -1,4 +1,5 @@
 import { getDataApiUrl } from '@/lib/data-api/client'
+import { resolvePublicRuntimeEnv } from '@/lib/public-runtime-config.shared'
 import { normalizeAddress } from '@/lib/wallet'
 
 export interface PortfolioSnapshot {
@@ -56,6 +57,47 @@ function parseTradedCount(body: any): number {
   return toNumber(body)
 }
 
+function parsePnlChange(body: unknown): number {
+  if (!Array.isArray(body)) {
+    return 0
+  }
+
+  function parseFiniteValue(value: unknown): number | null {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : null
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim()
+      if (!trimmed) {
+        return null
+      }
+      const parsed = Number(trimmed)
+      return Number.isFinite(parsed) ? parsed : null
+    }
+
+    return null
+  }
+
+  const points = body
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        return null
+      }
+
+      const point = entry as { t?: unknown; p?: unknown }
+      const timestamp = parseFiniteValue(point.t)
+      const value = parseFiniteValue(point.p)
+      return timestamp === null || value === null ? null : { t: timestamp, p: value }
+    })
+    .filter((point): point is { t: number; p: number } => point !== null)
+    .sort((a, b) => a.t - b.t)
+  if (points.length < 2) {
+    return 0
+  }
+  return points[points.length - 1].p - points[0].p
+}
+
 async function fetchJson(url: string) {
   const response = await fetch(url)
 
@@ -64,6 +106,18 @@ async function fetchJson(url: string) {
   }
 
   return await response.json()
+}
+
+async function fetchBiggestClosedPosition(dataApiUrl: string, address: string) {
+  const params = new URLSearchParams({
+    user: address,
+    limit: '1',
+    offset: '0',
+    sortBy: 'REALIZEDPNL',
+    sortDirection: 'DESC',
+  })
+  const positions = await fetchJson(`${dataApiUrl}/closed-positions?${params.toString()}`)
+  return Array.isArray(positions) ? positions[0] : undefined
 }
 
 export async function fetchPortfolioSnapshot(userAddress?: string | null): Promise<PortfolioSnapshot> {
@@ -78,62 +132,40 @@ export async function fetchPortfolioSnapshot(userAddress?: string | null): Promi
 
   try {
     const dataApiUrl = getDataApiUrl()
+    const userPnlUrl = resolvePublicRuntimeEnv(process.env).userPnlUrl
     const valueUrl = `${dataApiUrl}/value?user=${encodeURIComponent(address)}`
-    const activeParams = new URLSearchParams({
-      user: address,
-      limit: '100',
-      offset: '0',
-      sizeThreshold: '0.01',
-      sortDirection: 'DESC',
-    })
-    const closedParams = new URLSearchParams({
-      user: address,
-      limit: '100',
-      offset: '0',
-      sortBy: 'TIMESTAMP',
-      sortDirection: 'DESC',
-      sizeThreshold: '0.01',
-    })
-
     const tradedUrl = `${dataApiUrl}/traded?user=${encodeURIComponent(address)}`
+    const pnlEndpoint = new URL('/user-pnl', userPnlUrl)
+    pnlEndpoint.search = new URLSearchParams({
+      user_address: address,
+      interval: '1d',
+      fidelity: '1h',
+    }).toString()
 
-    const [valueResult, activePositionsResult, closedPositionsResult, tradedResult] = await Promise.allSettled([
+    const [valueResult, biggestClosedPositionResult, tradedResult, pnlResult] = await Promise.allSettled([
       fetchJson(valueUrl),
-      fetchJson(`${dataApiUrl}/positions?${activeParams.toString()}`),
-      fetchJson(`${dataApiUrl}/closed-positions?${closedParams.toString()}`),
+      fetchBiggestClosedPosition(dataApiUrl, address),
       fetchJson(tradedUrl),
+      fetchJson(pnlEndpoint.toString()),
     ])
 
     const positionsValue = valueResult.status === 'fulfilled' ? parsePortfolioValue(valueResult.value) : 0
 
-    const activePositions =
-      activePositionsResult.status === 'fulfilled' && Array.isArray(activePositionsResult.value)
-        ? activePositionsResult.value
-        : []
-
-    const closedPositions =
-      closedPositionsResult.status === 'fulfilled' && Array.isArray(closedPositionsResult.value)
-        ? closedPositionsResult.value
-        : []
-
     const tradedCount = tradedResult.status === 'fulfilled' ? parseTradedCount(tradedResult.value) : 0
 
-    const predictions = tradedCount || activePositions.length + closedPositions.length
-
-    const profitLossActive = activePositions.reduce((total, position) => total + toNumber((position as any).cashPnl), 0)
-    const profitLossClosed = closedPositions.reduce(
-      (total, position) => total + toNumber((position as any).realizedPnl),
-      0,
-    )
-
-    const biggestWin = closedPositions.reduce((max, position) => {
-      const realized = toNumber((position as any).realizedPnl)
-      return realized > max ? realized : max
-    }, 0)
+    const predictions = tradedResult.status === 'fulfilled' ? tradedCount : 0
+    const profitLoss = pnlResult.status === 'fulfilled' ? parsePnlChange(pnlResult.value) : 0
+    const biggestWin =
+      biggestClosedPositionResult.status === 'fulfilled'
+        ? Math.max(
+            0,
+            toNumber((biggestClosedPositionResult.value as { realizedPnl?: unknown } | undefined)?.realizedPnl),
+          )
+        : 0
 
     return {
       positionsValue,
-      profitLoss: profitLossActive + profitLossClosed,
+      profitLoss,
       predictions,
       biggestWin,
     }
