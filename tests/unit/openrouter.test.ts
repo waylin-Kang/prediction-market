@@ -112,4 +112,78 @@ describe('openrouter helpers', () => {
     expect(headers['HTTP-Referer']).toBe('https://kuest.test')
     expect(headers['X-Title']).toBe('Kuest Runtime')
   })
+
+  it('loads all available models for translation selection', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    mocks.loadRuntimeThemeSiteName.mockResolvedValueOnce('Kuest Runtime')
+
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'anthropic/claude-sonnet',
+              name: 'Claude Sonnet',
+              supported_parameters: ['max_tokens'],
+            },
+            {
+              id: 'openai/gpt-4o-mini',
+              name: 'GPT-4o mini',
+              supported_parameters: ['max_tokens', 'web_search_options'],
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+
+    const { fetchAllOpenRouterModels } = await import('@/lib/ai/openrouter')
+    await expect(fetchAllOpenRouterModels('openrouter-key')).resolves.toEqual([
+      {
+        id: 'anthropic/claude-sonnet',
+        name: 'Claude Sonnet',
+      },
+      {
+        id: 'openai/gpt-4o-mini',
+        name: 'GPT-4o mini',
+      },
+    ])
+  })
+
+  it('shares the in-flight models response between both projections', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    mocks.loadRuntimeThemeSiteName.mockResolvedValueOnce('Kuest Runtime')
+
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'openai/gpt-4o-mini',
+              name: 'GPT-4o mini',
+              supported_parameters: ['web_search_options'],
+            },
+            {
+              id: 'anthropic/claude-sonnet',
+              name: 'Claude Sonnet',
+              supported_parameters: [],
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+
+    const { fetchAllOpenRouterModels, fetchOpenRouterModels } = await import('@/lib/ai/openrouter')
+    const [webSearchModels, allModels] = await Promise.all([
+      fetchOpenRouterModels('openrouter-key'),
+      fetchAllOpenRouterModels('openrouter-key'),
+    ])
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(webSearchModels.map((model) => model.id)).toEqual(['openai/gpt-4o-mini'])
+    expect(allModels.map((model) => model.id)).toEqual(['anthropic/claude-sonnet', 'openai/gpt-4o-mini'])
+  })
 })

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { getAutomaticTranslationsEnabledFromSettings } from '@/i18n/locale-settings'
+import {
+  getAutomaticTranslationsEnabledFromSettings,
+  getEnabledLocalesFromSettings,
+  getLocaleOrderFromSettings,
+} from '@/i18n/locale-settings'
 import {
   DEFAULT_LOCALE,
   normalizeEnabledLocales,
@@ -10,9 +14,9 @@ import {
 } from '@/i18n/locales'
 
 describe('locale settings helpers', () => {
-  it('normalizes enabled locales in supported order and keeps default', () => {
+  it('preserves enabled locale order and keeps default first', () => {
     const input = ['fr', 'en', 'es']
-    expect(normalizeEnabledLocales(input)).toEqual([DEFAULT_LOCALE, 'es', 'fr'])
+    expect(normalizeEnabledLocales(input)).toEqual([DEFAULT_LOCALE, 'fr', 'es'])
   })
 
   it('adds default locale when missing', () => {
@@ -20,7 +24,37 @@ describe('locale settings helpers', () => {
   })
 
   it('parses enabled locales from JSON', () => {
-    expect(parseEnabledLocales('["fr","en"]')).toEqual([DEFAULT_LOCALE, 'fr'])
+    expect(parseEnabledLocales('["fr","en","de"]')).toEqual([DEFAULT_LOCALE, 'fr', 'de'])
+  })
+
+  it('uses the stored order for enabled locales', () => {
+    expect(
+      getEnabledLocalesFromSettings({
+        i18n: {
+          enabled_locales: {
+            value: '["pt","en","de"]',
+            updated_at: new Date().toISOString(),
+          },
+        },
+      }),
+    ).toEqual([DEFAULT_LOCALE, 'pt', 'de'])
+  })
+
+  it('uses the stored order for all locales', () => {
+    expect(
+      getLocaleOrderFromSettings({
+        i18n: {
+          locale_order: {
+            value: '["pt","en","de"]',
+            updated_at: new Date().toISOString(),
+          },
+        },
+      }),
+    ).toEqual(['en', 'pt', 'de', 'es', 'fr', 'zh', 'ja', 'ar', 'ru', 'it', 'pl', 'ko'])
+  })
+
+  it('falls back to the enabled order when the full order is not stored', () => {
+    expect(getLocaleOrderFromSettings(undefined)).toBeNull()
   })
 
   it('falls back to supported locales on invalid JSON', () => {

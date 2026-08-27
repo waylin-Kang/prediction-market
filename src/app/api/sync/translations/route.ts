@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, like, lte, or } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, like, lte, or, sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 
 import type { NonDefaultLocale } from '@/i18n/locales'
@@ -252,8 +252,27 @@ async function fetchCandidateJobs(nowIso: string, locales: NonDefaultLocale[]): 
     return []
   }
 
-  const localePredicates = locales.map((locale) => like(jobsTable.dedupe_key, `%:${locale}`))
-  const localePredicate = localePredicates.length === 1 ? localePredicates[0] : or(...localePredicates)
+  const localeExpression = sql<string>`split_part(${jobsTable.dedupe_key}, ':', 2)`
+  const localePriorityExpression = sql<number>`CASE ${localeExpression} ${sql.join(
+    locales.map((locale, index) => sql`WHEN ${locale} THEN ${index}`),
+    sql` `,
+  )} ELSE ${locales.length} END`
+  const localeWeightExpression = sql<number>`${locales.length} - ${localePriorityExpression}`
+  const localeRankExpression = sql<number>`row_number() OVER (
+    PARTITION BY ${localeExpression}
+    ORDER BY ${jobsTable.available_at}, ${jobsTable.updated_at}, ${jobsTable.id}
+  )`
+  // Preserve the weighted merge sequence in SQL: locale i gets n - i slots per cycle.
+  const weightedCycleSize = (locales.length * (locales.length + 1)) / 2
+  const weightedPositionExpression = sql<number>`
+    floor((${localeRankExpression} - 1) / ${localeWeightExpression}) * ${weightedCycleSize}
+    + ${weightedCycleSize}
+    - (
+      (${locales.length} - ((${localeRankExpression} - 1) % ${localeWeightExpression}))
+      * ((${locales.length} - ((${localeRankExpression} - 1) % ${localeWeightExpression})) + 1) / 2
+    )
+    + ${localePriorityExpression}
+  `
 
   const rows = await db
     .select({
@@ -272,10 +291,16 @@ async function fetchCandidateJobs(nowIso: string, locales: NonDefaultLocale[]): 
         inArray(jobsTable.job_type, [...TRANSLATION_JOB_TYPES]),
         eq(jobsTable.status, 'pending'),
         lte(jobsTable.available_at, new Date(nowIso)),
-        localePredicate,
+        or(...locales.map((locale) => like(jobsTable.dedupe_key, `%:${locale}`))),
       ),
     )
-    .orderBy(asc(jobsTable.available_at), asc(jobsTable.updated_at))
+    .orderBy(
+      asc(weightedPositionExpression),
+      asc(localePriorityExpression),
+      asc(jobsTable.available_at),
+      asc(jobsTable.updated_at),
+      asc(jobsTable.id),
+    )
     .limit(JOB_BATCH_SIZE)
 
   return rows as TranslationJobRow[]
@@ -521,6 +546,7 @@ async function upsertAutoEventTranslation(
     .onConflictDoUpdate({
       target: [eventTranslationsTable.event_id, eventTranslationsTable.locale],
       set: payload,
+      setWhere: eq(eventTranslationsTable.is_manual, false),
     })
 }
 
@@ -539,6 +565,7 @@ async function upsertAutoTagTranslation(tagId: number, locale: NonDefaultLocale,
     .onConflictDoUpdate({
       target: [tagTranslationsTable.tag_id, tagTranslationsTable.locale],
       set: payload,
+      setWhere: eq(tagTranslationsTable.is_manual, false),
     })
 }
 function extractJsonObject(raw: string) {
@@ -999,7 +1026,7 @@ export async function GET(request: Request) {
         loadEnabledLocales(),
       ])
       const enabledTranslationLocales = enabledLocales.filter(isNonDefaultLocale)
-      const providerSignature = buildProviderSignature(openRouterSettings.model)
+      const providerSignature = buildProviderSignature(openRouterSettings.translationModel || openRouterSettings.model)
 
       if (!openRouterSettings.configured || !openRouterSettings.apiKey) {
         return {
@@ -1111,7 +1138,7 @@ export async function GET(request: Request) {
         )
         await processPendingTranslationJobs(
           pendingTranslations,
-          openRouterSettings.model,
+          openRouterSettings.translationModel || openRouterSettings.model,
           openRouterSettings.apiKey,
           stats,
           startedAt,

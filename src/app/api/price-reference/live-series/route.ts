@@ -317,8 +317,9 @@ export async function GET(request: Request) {
     )
 
     const openingRow =
-      selectMostRecentRowAtOrBefore(openingHistoryRows, eventWindowStartMs) ??
-      selectMostRecentRowAtOrBefore(openingFallbackRows, eventWindowStartMs)
+      openingHistoryRows.find((row) => row.window_end_ms === openingHistoryTargetMs) ??
+      openingFallbackRows.find((row) => row.window_end_ms === openingFallbackTargetMs) ??
+      null
     const windowRow = selectClosingRow(
       closingHistoryRows,
       closingHistoryTargetMs,

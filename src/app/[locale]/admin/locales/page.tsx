@@ -4,7 +4,11 @@ import { Suspense } from 'react'
 
 import AdminPageSkeleton from '@/app/[locale]/admin/_components/AdminPageSkeleton'
 import AdminLocalesSettingsForm from '@/app/[locale]/admin/locales/_components/AdminLocalesSettingsForm'
-import { getAutomaticTranslationsEnabledFromSettings, getEnabledLocalesFromSettings } from '@/i18n/locale-settings'
+import {
+  getAutomaticTranslationsEnabledFromSettings,
+  getEnabledLocalesFromSettings,
+  getLocaleOrderFromSettings,
+} from '@/i18n/locale-settings'
 import { SUPPORTED_LOCALES } from '@/i18n/locales'
 import { parseOpenRouterProviderSettings } from '@/lib/ai/market-context-config'
 import { SettingsRepository } from '@/lib/db/queries/settings'
@@ -25,6 +29,7 @@ async function AdminLocalesSettingsContent({ params }: PageProps<'/[locale]/admi
 
   const { data: allSettings } = await SettingsRepository.getSettings()
   const enabledLocales = getEnabledLocalesFromSettings(allSettings ?? undefined)
+  const localeOrder = getLocaleOrderFromSettings(allSettings ?? undefined)
   const automaticTranslationsEnabled = getAutomaticTranslationsEnabledFromSettings(allSettings ?? undefined)
   const openRouterSettings = parseOpenRouterProviderSettings(allSettings ?? undefined)
   const isOpenRouterConfigured = openRouterSettings.configured
@@ -34,13 +39,14 @@ async function AdminLocalesSettingsContent({ params }: PageProps<'/[locale]/admi
       <div className="grid gap-2">
         <h1 className="text-2xl font-semibold">{t('Locales')}</h1>
         <p className="text-sm text-muted-foreground">
-          {t('Manage enabled locales and translation automation behavior.')}
+          {t('Order language preferences and disable unused locales to speed up translations.')}
         </p>
       </div>
 
       <AdminLocalesSettingsForm
         supportedLocales={SUPPORTED_LOCALES}
         enabledLocales={enabledLocales}
+        localeOrder={localeOrder ?? undefined}
         automaticTranslationsEnabled={automaticTranslationsEnabled}
         isOpenRouterConfigured={isOpenRouterConfigured}
       />
