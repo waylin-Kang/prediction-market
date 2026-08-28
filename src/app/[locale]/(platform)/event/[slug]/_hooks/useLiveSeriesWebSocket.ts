@@ -3,7 +3,12 @@ import { useEffect, useRef, useState } from 'react'
 import type { DataPoint } from '@/types/PredictionChartTypes'
 
 import { usePublicRuntimeConfig } from '@/hooks/usePublicRuntimeConfig'
-import { closeWebSocketWhenReady, createWebSocketReconnectController } from '@/lib/websocket-reconnect'
+import {
+  closeWebSocketWhenReady,
+  createWebSocketHeartbeatController,
+  createWebSocketReconnectController,
+  probeWebSocketWithPong,
+} from '@/lib/websocket-reconnect'
 
 import {
   appendLivePriceTransition,
@@ -25,8 +30,6 @@ interface UseLiveSeriesWebSocketOptions {
   subscriptionSymbol: string
   isLiveView: boolean
 }
-
-const LIVE_DATA_HEARTBEAT_INTERVAL_MS = 5_000
 
 export function useLiveSeriesWebSocket({
   topic,
@@ -56,15 +59,7 @@ export function useLiveSeriesWebSocket({
 
       let isActive = true
       let ws: WebSocket | null = null
-      let heartbeatInterval: ReturnType<typeof setInterval> | null = null
       let previousPriceMessageTimestamp: number | null = null
-
-      function stopHeartbeat() {
-        if (heartbeatInterval) {
-          clearInterval(heartbeatInterval)
-          heartbeatInterval = null
-        }
-      }
 
       function buildSubscriptionPayload(action: 'subscribe' | 'unsubscribe') {
         const filters = JSON.stringify({
@@ -87,20 +82,17 @@ export function useLiveSeriesWebSocket({
         if (ws !== socket) {
           return
         }
+        reconnectController?.markConnected()
+        heartbeatController?.markOpen(socket)
         setStatus('connecting')
         socket.send(buildSubscriptionPayload('subscribe'))
-        stopHeartbeat()
-        heartbeatInterval = setInterval(() => {
-          if (ws === socket && socket.readyState === WebSocket.OPEN) {
-            socket.send('PING')
-          }
-        }, LIVE_DATA_HEARTBEAT_INTERVAL_MS)
       }
 
       function handleMessage(socket: WebSocket, eventMessage: MessageEvent<string>) {
         if (!isActive || ws !== socket) {
           return
         }
+        const arrivalTimestamp = Date.now()
 
         let payload: any
         try {
@@ -109,7 +101,6 @@ export function useLiveSeriesWebSocket({
           return
         }
 
-        const arrivalTimestamp = Date.now()
         const activeEventEndTimestamp = eventEndTimestampRef.current
         const updates = extractLivePriceUpdates(payload, topic, subscriptionSymbol, arrivalTimestamp)
         const normalizedUpdates = updates
@@ -133,6 +124,7 @@ export function useLiveSeriesWebSocket({
         if (!wsUpdatesForRender.length) {
           return
         }
+        heartbeatController?.markActivity(socket, arrivalTimestamp)
 
         const cadenceTransitionDurationMs = resolveLivePriceTransitionDuration(
           previousPriceMessageTimestamp,
@@ -207,6 +199,7 @@ export function useLiveSeriesWebSocket({
       }
 
       let reconnectController: ReturnType<typeof createWebSocketReconnectController> | null = null
+      let heartbeatController: ReturnType<typeof createWebSocketHeartbeatController> | null = null
 
       function clearReconnect() {
         reconnectController?.clearReconnect()
@@ -228,7 +221,7 @@ export function useLiveSeriesWebSocket({
         if (ws !== socket) {
           return
         }
-        stopHeartbeat()
+        heartbeatController?.clear()
         if (!isActive) {
           return
         }
@@ -246,16 +239,27 @@ export function useLiveSeriesWebSocket({
         socket.onerror = handleError
         socket.onclose = () => handleClose(socket)
         ws = socket
+        heartbeatController?.markConnecting(socket)
       }
 
       reconnectController = createWebSocketReconnectController({
         connect,
         getWebSocket: () => ws,
         isActive: () => isActive,
-        reconnectOnVisible: true,
+        probeWebSocket: probeWebSocketWithPong,
         resetWebSocket: () => {
-          stopHeartbeat()
+          heartbeatController?.clear()
           ws = null
+        },
+      })
+      heartbeatController = createWebSocketHeartbeatController({
+        getWebSocket: () => ws,
+        isActive: () => isActive,
+        onConnectionLost: (socket) => {
+          ws = null
+          setStatus('offline')
+          closeWebSocketWhenReady(socket)
+          scheduleReconnect()
         },
       })
 
@@ -266,7 +270,7 @@ export function useLiveSeriesWebSocket({
       return function cleanupLiveSeriesWebSocket() {
         isActive = false
         setStatus('offline')
-        stopHeartbeat()
+        heartbeatController.clear()
         clearReconnect()
         document.removeEventListener('visibilitychange', handleVisibilityChange)
         const socket = ws

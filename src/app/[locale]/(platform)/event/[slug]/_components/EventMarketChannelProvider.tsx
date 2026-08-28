@@ -11,7 +11,11 @@ import type {
 import type { Market } from '@/types'
 
 import { usePublicRuntimeConfig } from '@/hooks/usePublicRuntimeConfig'
-import { closeWebSocketWhenReady, createWebSocketReconnectController } from '@/lib/websocket-reconnect'
+import {
+  closeWebSocketWhenReady,
+  createWebSocketHeartbeatController,
+  createWebSocketReconnectController,
+} from '@/lib/websocket-reconnect'
 
 type MarketChannelStatus = 'connecting' | 'live' | 'offline'
 type MarketChannelListener = (payload: any) => void
@@ -28,7 +32,6 @@ interface TokenMapping {
 
 const MarketChannelContext = createContext<MarketChannelContextValue | null>(null)
 const WEBSOCKET_PING_INTERVAL_MS = 10000
-const WEBSOCKET_STALE_TIMEOUT_MS = 70000
 
 function buildTokenMapping(markets: Market[]): TokenMapping {
   const tokenIds: string[] = []
@@ -302,50 +305,13 @@ function useMarketChannelConnection({
 
       let isActive = true
       let ws: WebSocket | null = null
-      let lastMessageAt = Date.now()
-      let heartbeatHandle: number | null = null
-
-      function clearHeartbeat() {
-        if (heartbeatHandle != null) {
-          window.clearInterval(heartbeatHandle)
-          heartbeatHandle = null
-        }
-      }
-
-      function startHeartbeat() {
-        clearHeartbeat()
-        heartbeatHandle = window.setInterval(() => {
-          if (!isActive || !ws) {
-            return
-          }
-          if (Date.now() - lastMessageAt > WEBSOCKET_STALE_TIMEOUT_MS) {
-            const staleSocket = ws
-            ws = null
-            clearHeartbeat()
-            closeWebSocketWhenReady(staleSocket)
-            scheduleReconnect()
-            return
-          }
-          if (ws.readyState === WebSocket.OPEN) {
-            try {
-              ws.send('PING')
-            } catch {
-              const staleSocket = ws
-              ws = null
-              clearHeartbeat()
-              closeWebSocketWhenReady(staleSocket)
-              scheduleReconnect()
-            }
-          }
-        }, WEBSOCKET_PING_INTERVAL_MS)
-      }
 
       function handleOpen(socket: WebSocket) {
         if (socket !== ws) {
           return
         }
-        lastMessageAt = Date.now()
-        startHeartbeat()
+        reconnectController?.markConnected()
+        heartbeatController?.markOpen(socket)
         setConnectionStatus('connecting')
         socket.send(
           JSON.stringify({
@@ -361,7 +327,7 @@ function useMarketChannelConnection({
         if (!isActive || socket !== ws) {
           return
         }
-        lastMessageAt = Date.now()
+        heartbeatController?.markActivity(socket)
         setConnectionStatus('live')
         let payload: any
         try {
@@ -403,6 +369,7 @@ function useMarketChannelConnection({
       }
 
       let reconnectController: ReturnType<typeof createWebSocketReconnectController> | null = null
+      let heartbeatController: ReturnType<typeof createWebSocketHeartbeatController> | null = null
 
       function clearReconnect() {
         reconnectController?.clearReconnect()
@@ -420,7 +387,7 @@ function useMarketChannelConnection({
         if (socket !== ws) {
           return
         }
-        clearHeartbeat()
+        heartbeatController?.clear()
         if (isActive) {
           setConnectionStatus('offline')
           ws = null
@@ -429,7 +396,7 @@ function useMarketChannelConnection({
       }
 
       function disconnectSocket(socket: WebSocket) {
-        clearHeartbeat()
+        heartbeatController?.clear()
         socket.onopen = null
         socket.onmessage = null
         socket.onerror = null
@@ -448,17 +415,28 @@ function useMarketChannelConnection({
         socket.onerror = () => handleError(socket)
         socket.onclose = () => handleClose(socket)
         ws = socket
+        heartbeatController?.markConnecting(socket)
       }
 
       reconnectController = createWebSocketReconnectController({
         connect,
-        disconnectWebSocket: disconnectSocket,
         getWebSocket: () => ws,
         isActive: () => isActive,
-        reconnectOnVisible: true,
         resetWebSocket: () => {
+          heartbeatController?.clear()
           ws = null
         },
+      })
+      heartbeatController = createWebSocketHeartbeatController({
+        getWebSocket: () => ws,
+        isActive: () => isActive,
+        onConnectionLost: (socket) => {
+          ws = null
+          setConnectionStatus('offline')
+          closeWebSocketWhenReady(socket)
+          scheduleReconnect()
+        },
+        pingIntervalMs: WEBSOCKET_PING_INTERVAL_MS,
       })
 
       connect()
@@ -467,7 +445,7 @@ function useMarketChannelConnection({
       return function teardownMarketChannelConnection() {
         isActive = false
         clearReconnect()
-        clearHeartbeat()
+        heartbeatController.clear()
         document.removeEventListener('visibilitychange', handleVisibilityChange)
         const socket = ws
         if (socket) {

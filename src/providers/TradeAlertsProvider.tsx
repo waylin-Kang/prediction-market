@@ -24,7 +24,12 @@ import {
   putTradeAlert,
   setTradeAlertsNeedsSync,
 } from '@/lib/trade-alerts-idb'
-import { closeWebSocketWhenReady, createWebSocketReconnectController } from '@/lib/websocket-reconnect'
+import {
+  closeWebSocketWhenReady,
+  createWebSocketHeartbeatController,
+  createWebSocketReconnectController,
+  probeWebSocketWithPong,
+} from '@/lib/websocket-reconnect'
 import { useTradeAlertsStore } from '@/stores/useTradeAlerts'
 import { useUser } from '@/stores/useUser'
 
@@ -265,6 +270,11 @@ export default function TradeAlertsProvider({ children }: { children: ReactNode 
         const nextSocket = new WebSocket(wsUrl)
         socket = nextSocket
         nextSocket.onopen = () => {
+          if (socket !== nextSocket) {
+            return
+          }
+          reconnectController.markConnected()
+          heartbeatController.markOpen(nextSocket)
           nextSocket.send(
             JSON.stringify({
               action: 'subscribe',
@@ -280,6 +290,10 @@ export default function TradeAlertsProvider({ children }: { children: ReactNode 
           )
         }
         nextSocket.onmessage = (event) => {
+          if (socket !== nextSocket) {
+            return
+          }
+          heartbeatController.markActivity(nextSocket)
           try {
             void handlePayload(JSON.parse(String(event.data))).catch((error) =>
               console.error('Failed to store WebSocket trade alert', error),
@@ -290,21 +304,36 @@ export default function TradeAlertsProvider({ children }: { children: ReactNode 
         }
         nextSocket.onerror = () => nextSocket.close()
         nextSocket.onclose = () => {
-          if (socket === nextSocket) {
-            socket = null
+          if (socket !== nextSocket) {
+            return
           }
-          reconnectController.scheduleReconnect()
+          heartbeatController.clear()
+          socket = null
+          if (activeRef.current) {
+            reconnectController.scheduleReconnect()
+          }
         }
+        heartbeatController.markConnecting(nextSocket)
       }
 
       const reconnectController = createWebSocketReconnectController({
         connect,
         getWebSocket: () => socket,
         isActive: () => activeRef.current,
+        probeWebSocket: probeWebSocketWithPong,
         resetWebSocket: () => {
+          heartbeatController.clear()
           socket = null
         },
-        reconnectOnVisible: true,
+      })
+      const heartbeatController = createWebSocketHeartbeatController({
+        getWebSocket: () => socket,
+        isActive: () => activeRef.current,
+        onConnectionLost: (staleSocket) => {
+          socket = null
+          closeWebSocketWhenReady(staleSocket)
+          reconnectController.scheduleReconnect()
+        },
       })
       document.addEventListener('visibilitychange', reconnectController.handleVisibilityChange)
       connect()
@@ -314,6 +343,7 @@ export default function TradeAlertsProvider({ children }: { children: ReactNode 
         navigator.serviceWorker?.removeEventListener('message', handleServiceWorkerMessage)
         document.removeEventListener('visibilitychange', reconnectController.handleVisibilityChange)
         reconnectController.clearReconnect()
+        heartbeatController.clear()
         if (socket) {
           closeWebSocketWhenReady(socket)
           socket = null

@@ -7,7 +7,12 @@ import type { Comment, User } from '@/types'
 
 import { commentMetricsQueryKey } from '@/app/[locale]/(platform)/event/[slug]/_hooks/useCommentMetrics'
 import { usePublicRuntimeConfig } from '@/hooks/usePublicRuntimeConfig'
-import { closeWebSocketWhenReady, createWebSocketReconnectController } from '@/lib/websocket-reconnect'
+import {
+  closeWebSocketWhenReady,
+  createWebSocketHeartbeatController,
+  createWebSocketReconnectController,
+  probeWebSocketWithPong,
+} from '@/lib/websocket-reconnect'
 
 interface LiveCommentProfile {
   baseAddress?: string
@@ -158,11 +163,13 @@ export function useLiveCommentsChannel({ eventSlug, user, enabled }: LiveComment
       })
     }
 
-    function handleOpen() {
-      if (!ws) {
+    function handleOpen(socket: WebSocket) {
+      if (socket !== ws) {
         return
       }
-      ws.send(buildSubscriptionPayload('subscribe'))
+      reconnectController?.markConnected()
+      heartbeatController?.markOpen(socket)
+      socket.send(buildSubscriptionPayload('subscribe'))
       setStatus('live')
     }
 
@@ -284,10 +291,11 @@ export function useLiveCommentsChannel({ eventSlug, user, enabled }: LiveComment
       }
     }
 
-    function handleMessage(eventMessage: MessageEvent<string>) {
-      if (!isActive) {
+    function handleMessage(socket: WebSocket, eventMessage: MessageEvent<string>) {
+      if (!isActive || socket !== ws) {
         return
       }
+      heartbeatController?.markActivity(socket)
       setStatus('live')
 
       let payload: LiveCommentsMessage | null = null
@@ -311,13 +319,14 @@ export function useLiveCommentsChannel({ eventSlug, user, enabled }: LiveComment
       }
     }
 
-    function handleError() {
-      if (isActive) {
+    function handleError(socket: WebSocket) {
+      if (isActive && socket === ws) {
         setStatus('offline')
       }
     }
 
     let reconnectController: ReturnType<typeof createWebSocketReconnectController> | null = null
+    let heartbeatController: ReturnType<typeof createWebSocketHeartbeatController> | null = null
 
     function clearReconnect() {
       reconnectController?.clearReconnect()
@@ -331,7 +340,12 @@ export function useLiveCommentsChannel({ eventSlug, user, enabled }: LiveComment
       reconnectController?.scheduleReconnect()
     }
 
-    function handleClose() {
+    function handleClose(socket: WebSocket) {
+      if (socket !== ws) {
+        return
+      }
+      heartbeatController?.clear()
+      ws = null
       if (!isActive) {
         return
       }
@@ -345,19 +359,32 @@ export function useLiveCommentsChannel({ eventSlug, user, enabled }: LiveComment
       }
       setStatus('connecting')
       const socket = new WebSocket(wsUrl)
-      socket.onopen = handleOpen
-      socket.onmessage = handleMessage
-      socket.onerror = handleError
-      socket.onclose = handleClose
+      socket.onopen = () => handleOpen(socket)
+      socket.onmessage = (eventMessage) => handleMessage(socket, eventMessage)
+      socket.onerror = () => handleError(socket)
+      socket.onclose = () => handleClose(socket)
       ws = socket
+      heartbeatController?.markConnecting(socket)
     }
 
     reconnectController = createWebSocketReconnectController({
       connect,
       getWebSocket: () => ws,
       isActive: () => isActive,
+      probeWebSocket: probeWebSocketWithPong,
       resetWebSocket: () => {
+        heartbeatController?.clear()
         ws = null
+      },
+    })
+    heartbeatController = createWebSocketHeartbeatController({
+      getWebSocket: () => ws,
+      isActive: () => isActive,
+      onConnectionLost: (socket) => {
+        ws = null
+        setStatus('offline')
+        closeWebSocketWhenReady(socket)
+        scheduleReconnect()
       },
     })
 
@@ -368,6 +395,7 @@ export function useLiveCommentsChannel({ eventSlug, user, enabled }: LiveComment
       isActive = false
       setStatus('offline')
       clearReconnect()
+      heartbeatController.clear()
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       const socket = ws
       if (socket) {

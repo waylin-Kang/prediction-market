@@ -94,6 +94,10 @@ const HomeEventLiveSeriesChart = dynamic(
   { ssr: false, loading: () => <div className="min-h-60 w-full md:min-h-[260px] lg:min-h-[280px]" /> },
 )
 
+function preloadFeaturedChunk(loader: () => Promise<unknown>) {
+  void loader().catch(() => undefined)
+}
+
 function useElementWidth<T extends HTMLElement>(enabled = true) {
   const [element, setElement] = useState<T | null>(null)
 
@@ -1976,7 +1980,6 @@ function useHomeFeaturedRolloverItem(item: HomeFeaturedEventCard) {
     return {
       ...item,
       ...activeRolloverEvent,
-      contextItems: [],
       nextSeriesEvent: nextRolloverEvent,
     }
   }, [activeRolloverEvent, item, nextRolloverEvent])
@@ -1986,19 +1989,21 @@ function FeaturedSlide({
   item: sourceItem,
   currentTimestamp,
   isActive,
+  isPrevious,
   isNext,
   isChartEnabled,
 }: {
   item: HomeFeaturedEventCard
   currentTimestamp: number | null
   isActive: boolean
+  isPrevious: boolean
   isNext: boolean
   isChartEnabled: boolean
 }) {
   const item = useHomeFeaturedRolloverItem(sourceItem)
   const isMobile = useIsMobile()
   const linkedHref = resolveEventPagePath(item.event)
-  const shouldRenderChart = isChartEnabled && (isActive || isNext)
+  const shouldRenderChart = isChartEnabled && (isPrevious || isActive || isNext)
   const [chartContainerRef, chartContainerWidth] = useElementWidth<HTMLDivElement>(shouldRenderChart)
   const isSingleMarket = item.event.total_markets_count === 1 || item.event.markets.length === 1
   const shouldRenderLiveSeriesChart = Boolean(
@@ -2048,6 +2053,7 @@ function FeaturedSlide({
               compactBitcoinHeaderPrices
               preserveSeriesContinuity
               showLiveMarketLink={false}
+              featuredChartLayout
             />
           ) : item.kind === 'sports' && sportsGraphCard && sportsGraphSelection ? (
             <HomeSportsGameGraph
@@ -2183,28 +2189,91 @@ export default function HomeFeaturedEventsCarousel({
   const [isAutoAdvancePaused, setIsAutoAdvancePaused] = useState(false)
   const hasMultipleItems = items.length > 1
   const activeItem = items[activeIndex]
+  const previousIndex = items.length === 0 ? 0 : (activeIndex - 1 + items.length) % items.length
   const nextIndex = items.length === 0 ? 0 : (activeIndex + 1) % items.length
 
-  useEffect(function observeFeaturedCarousel() {
-    const node = sectionRef.current
-    if (!node || typeof IntersectionObserver === 'undefined') {
-      return
-    }
+  useEffect(
+    function preloadFeaturedCharts() {
+      if (typeof window === 'undefined') {
+        return
+      }
 
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (!entry?.isIntersecting) {
+      const mediaQuery = window.matchMedia?.('(min-width: 768px)')
+
+      function preloadCharts() {
+        if (mediaQuery && !mediaQuery.matches) {
           return
         }
 
-        setIsChartNearViewport(true)
-        observer.disconnect()
-      },
-      { rootMargin: '480px 0px' },
-    )
+        if (items.some((item) => item.kind === 'sports')) {
+          preloadFeaturedChunk(
+            () => import('@/app/[locale]/(platform)/sports/_components/_sports-games-center/SportsGameGraph'),
+          )
+        }
 
-    observer.observe(node)
-    return () => observer.disconnect()
+        if (items.some((item) => item.liveChartConfig && shouldUseLiveSeriesChart(item.event, item.liveChartConfig))) {
+          preloadFeaturedChunk(() => import('@/app/[locale]/(platform)/event/[slug]/_components/EventLiveSeriesChart'))
+        }
+      }
+
+      preloadCharts()
+
+      if (!mediaQuery) {
+        return
+      }
+
+      mediaQuery.addEventListener('change', preloadCharts)
+      return () => mediaQuery.removeEventListener('change', preloadCharts)
+    },
+    [items],
+  )
+
+  useEffect(function observeFeaturedCarousel() {
+    const observedNode = sectionRef.current
+    if (!observedNode || typeof window === 'undefined') {
+      return
+    }
+
+    const mediaQuery = window.matchMedia?.('(min-width: 768px)')
+    let observer: IntersectionObserver | null = null
+
+    function observeChartViewport() {
+      observer?.disconnect()
+      observer = null
+
+      if (mediaQuery && !mediaQuery.matches) {
+        setIsChartNearViewport(false)
+        return
+      }
+
+      if (typeof IntersectionObserver === 'undefined') {
+        setIsChartNearViewport(true)
+        return
+      }
+
+      observer = new IntersectionObserver(
+        ([entry]) => {
+          if (!entry?.isIntersecting) {
+            return
+          }
+
+          setIsChartNearViewport(true)
+          observer?.disconnect()
+          observer = null
+        },
+        { rootMargin: '480px 0px' },
+      )
+
+      observer.observe(observedNode!)
+    }
+
+    observeChartViewport()
+
+    mediaQuery?.addEventListener('change', observeChartViewport)
+    return () => {
+      mediaQuery?.removeEventListener('change', observeChartViewport)
+      observer?.disconnect()
+    }
   }, [])
 
   if (!activeItem) {
@@ -2241,6 +2310,7 @@ export default function HomeFeaturedEventsCarousel({
                 item={item}
                 currentTimestamp={currentTimestamp}
                 isActive={index === activeIndex}
+                isPrevious={index === previousIndex}
                 isNext={index === nextIndex}
                 isChartEnabled={isChartNearViewport}
               />
