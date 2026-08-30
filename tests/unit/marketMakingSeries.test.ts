@@ -6,8 +6,13 @@ import {
   filterEligiblePolymarketEvents,
   getPolymarketEndDateMin,
   getPolymarketRequestLimit,
+  isSponsorPremiumValid,
   isPolymarketEventOnKuest,
   kuestSeriesMetadata,
+  parsePolymarketUrl,
+  shouldAutoCompleteDeployment,
+  shouldCloseExistingDeployment,
+  shouldResetImportActions,
 } from '@/lib/market-making-discovery'
 import {
   buildMarketMakerQuoteInput,
@@ -19,6 +24,40 @@ import {
 } from '@/lib/market-making-series'
 
 describe('series market-making helpers', () => {
+  it('parses Polymarket event and market URLs', () => {
+    expect(parsePolymarketUrl('https://polymarket.com/event/example-event?utm_source=test')).toEqual({
+      kind: 'event',
+      slug: 'example-event',
+    })
+    expect(parsePolymarketUrl('https://www.polymarket.com/market/example-market/')).toEqual({
+      kind: 'market',
+      slug: 'example-market',
+    })
+    expect(parsePolymarketUrl('https://example.com/event/example-event')).toBeNull()
+    expect(parsePolymarketUrl('https://polymarket.com/profile/example-event')).toBeNull()
+  })
+
+  it('blocks funding when sponsor premium is invalid', () => {
+    expect(isSponsorPremiumValid('')).toBe(true)
+    expect(isSponsorPremiumValid('1000')).toBe(true)
+    expect(isSponsorPremiumValid('1001')).toBe(false)
+    expect(isSponsorPremiumValid('10.5')).toBe(false)
+  })
+
+  it('resets cancellation and withdrawal state only when the import changes', () => {
+    expect(shouldResetImportActions('0xABC', '0xabc')).toBe(false)
+    expect(shouldResetImportActions('0xabc', '0xdef')).toBe(true)
+    expect(shouldResetImportActions('0xabc', null)).toBe(true)
+  })
+
+  it('only auto-completes a deployment finalized during the active flow', () => {
+    expect(shouldCloseExistingDeployment(1n)).toBe(true)
+    expect(shouldCloseExistingDeployment(0n)).toBe(false)
+    expect(shouldAutoCompleteDeployment(false, 1n)).toBe(false)
+    expect(shouldAutoCompleteDeployment(true, 0n)).toBe(false)
+    expect(shouldAutoCompleteDeployment(true, 1n)).toBe(true)
+  })
+
   it('preserves legacy event import keys and isolates series imports', () => {
     const params = {
       chainId: 80002,
@@ -74,6 +113,7 @@ describe('series market-making helpers', () => {
       conditionIds: ['0x' + '11'.repeat(32)],
       depthPerSideAtomic: '1000000000',
       maxSpreadBps: 300,
+      sponsorPremiumBps: 0,
       series: {
         enabled: true,
         seriesSlug: 'btc-up-or-down-15m',
