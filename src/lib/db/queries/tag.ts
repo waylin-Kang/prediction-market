@@ -8,7 +8,7 @@ import type { PlatformCategorySidebarItem, PlatformNavigationChild } from '@/lib
 
 import { DEFAULT_LOCALE, NON_DEFAULT_LOCALES } from '@/i18n/locales'
 import { cacheTags } from '@/lib/cache-tags'
-import { resolveCategorySidebarData } from '@/lib/category-sidebar-config'
+import { getCategorySidebarConfiguredTagSlugs, resolveCategorySidebarData } from '@/lib/category-sidebar-config'
 import {
   CRYPTO_CADENCE_ROUTES,
   resolveCryptoCadenceRouteSlug,
@@ -398,6 +398,25 @@ export const TagRepository = {
       return { data: tagsWithChilds, error: errorMessage, globalChilds: [] }
     }
 
+    const configuredSidebarTagSlugs =
+      locale === DEFAULT_LOCALE ? [] : Array.from(getCategorySidebarConfiguredTagSlugs())
+    const { data: configuredSidebarTags, error: configuredSidebarTagsError } =
+      configuredSidebarTagSlugs.length === 0
+        ? { data: [], error: null }
+        : await runQuery(async () => {
+            const result = await db
+              .select({
+                id: tags.id,
+                slug: tags.slug,
+              })
+              .from(tags)
+              .where(and(inArray(tags.slug, configuredSidebarTagSlugs), eq(tags.is_main_category, false)))
+
+            return { data: result, error: null }
+          })
+
+    const configuredSidebarTagRecords = configuredSidebarTagsError ? [] : (configuredSidebarTags ?? [])
+
     const visibleMainEventTags = alias(event_tags, 'visible_main_event_tags')
     const visibleMainTags = alias(tags, 'visible_main_tags')
 
@@ -489,6 +508,9 @@ export const TagRepository = {
         translationTagIds.add(subtag.sub_tag_id)
       }
     }
+    for (const tag of configuredSidebarTagRecords) {
+      translationTagIds.add(tag.id)
+    }
 
     const { data: localizedNamesByTagId, error: translationError } = await getLocalizedNamesByTagId(
       Array.from(translationTagIds),
@@ -497,6 +519,24 @@ export const TagRepository = {
 
     if (translationError) {
       return { data: null, error: translationError, globalChilds: [] }
+    }
+
+    const localizedNamesBySlug = new Map<string, string>()
+    for (const subcategory of subcategoriesResult) {
+      if (!subcategory.sub_tag_slug) {
+        continue
+      }
+
+      const localizedName = localizedNamesByTagId.get(subcategory.sub_tag_id ?? -1)
+      if (localizedName) {
+        localizedNamesBySlug.set(subcategory.sub_tag_slug, localizedName)
+      }
+    }
+    for (const tag of configuredSidebarTagRecords) {
+      const localizedName = localizedNamesByTagId.get(tag.id)
+      if (localizedName) {
+        localizedNamesBySlug.set(tag.slug, localizedName)
+      }
     }
 
     const grouped = new Map<string, { name: string; slug: string; count: number }[]>()
@@ -600,6 +640,7 @@ export const TagRepository = {
         categorySlug: tag.slug,
         categoryCount: mainCategoryEventCounts.get(tag.slug) ?? 0,
         childs: sortedChilds,
+        localizedNamesBySlug,
       })
 
       return {
@@ -1055,10 +1096,14 @@ export const TagRepository = {
     data: TagTranslationsMap | null
     error: string | null
   }> {
-    const normalizedEntries = NON_DEFAULT_LOCALES.map((locale) => {
+    const normalizedEntries = NON_DEFAULT_LOCALES.flatMap((locale) => {
       const rawValue = translations[locale]
-      const value = typeof rawValue === 'string' ? rawValue.trim() : ''
-      return { locale, value }
+      if (typeof rawValue !== 'string') {
+        return []
+      }
+
+      const value = rawValue.trim()
+      return [{ locale, value }]
     })
 
     const localesToDelete = normalizedEntries.filter((entry) => entry.value.length === 0).map((entry) => entry.locale)

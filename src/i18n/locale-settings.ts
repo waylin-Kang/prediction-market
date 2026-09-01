@@ -13,6 +13,7 @@ const LOCALE_SETTINGS_GROUP = 'i18n'
 const LOCALE_SETTINGS_KEY = 'enabled_locales'
 const LOCALE_ORDER_SETTINGS_KEY = 'locale_order'
 const AUTOMATIC_TRANSLATIONS_SETTINGS_KEY = 'automatic_translations_enabled'
+const RULES_TRANSLATIONS_SETTINGS_KEY = 'rules_translations_enabled'
 
 type SettingsGroup = Record<string, { value: string; updated_at: string }>
 interface SettingsMap {
@@ -60,9 +61,18 @@ export function getLocaleOrderFromSettings(settings?: SettingsMap): SupportedLoc
   }
 }
 
+export function getEnabledLocalesInOrderFromSettings(settings?: SettingsMap): SupportedLocale[] {
+  const enabledLocales = getEnabledLocalesFromSettings(settings)
+  const enabledSet = new Set(enabledLocales)
+  const localeOrder = getLocaleOrderFromSettings(settings)
+  const orderedLocales = (localeOrder ?? enabledLocales).filter((locale) => enabledSet.has(locale))
+
+  return normalizeEnabledLocales(orderedLocales)
+}
+
 export async function loadEnabledLocales(): Promise<SupportedLocale[]> {
   const { data } = await SettingsRepository.getSettings()
-  return getEnabledLocalesFromSettings(data ?? undefined)
+  return getEnabledLocalesInOrderFromSettings(data ?? undefined)
 }
 
 export function getAutomaticTranslationsEnabledFromSettings(settings?: SettingsMap): boolean {
@@ -73,6 +83,16 @@ export function getAutomaticTranslationsEnabledFromSettings(settings?: SettingsM
 export async function loadAutomaticTranslationsEnabled(): Promise<boolean> {
   const { data } = await SettingsRepository.getSettings()
   return getAutomaticTranslationsEnabledFromSettings(data ?? undefined)
+}
+
+export function getRulesTranslationsEnabledFromSettings(settings?: SettingsMap): boolean {
+  const rawValue = settings?.[LOCALE_SETTINGS_GROUP]?.[RULES_TRANSLATIONS_SETTINGS_KEY]?.value
+  return normalizeBooleanSetting(rawValue, false)
+}
+
+export async function loadRulesTranslationsEnabled(): Promise<boolean> {
+  const { data } = await SettingsRepository.getSettings()
+  return getRulesTranslationsEnabledFromSettings(data ?? undefined)
 }
 
 export function serializeEnabledLocales(locales: SupportedLocale[]): string {

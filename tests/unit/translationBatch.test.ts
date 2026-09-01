@@ -83,10 +83,17 @@ describe('translation batch safety', () => {
   })
 
   it.each([
-    ['de', 'Trump approval diese Woche rauf oder runter?'],
-    ['es', '¿Trump approval sube o baja esta semana?'],
-    ['pt', 'Trump approval sobe ou desce esta semana?'],
-    ['zh', '本周Trump approval会上涨还是下跌？'],
+    ['ar', 'تأييد ترامب صعودًا أم هبوطًا هذا الأسبوع؟'],
+    ['de', 'Trump-Zustimmung diese Woche rauf oder runter?'],
+    ['es', '¿Aprobación de Trump sube o baja esta semana?'],
+    ['fr', 'Approbation de Trump en hausse ou en baisse cette semaine ?'],
+    ['it', 'Approvazione di Trump sale o scende questa settimana?'],
+    ['ja', '今週のトランプ支持率は上がる？下がる？'],
+    ['ko', '이번 주 트럼프 지지율 상승 또는 하락?'],
+    ['pl', 'Poparcie dla Trumpa wzrośnie czy spadnie w tym tygodniu?'],
+    ['pt', 'Aprovação de Trump sobe ou desce esta semana?'],
+    ['ru', 'Одобрение Трампа вырастет или упадет на этой неделе?'],
+    ['zh', '本周特朗普支持率会上涨还是下跌？'],
   ] as const)('formats weekly %s up-or-down titles deterministically', (locale, expected) => {
     expect(
       resolveDeterministicTranslation({
@@ -167,7 +174,7 @@ describe('translation batch safety', () => {
         sourceLabel: 'event title',
         sourceText: 'Bitcoin Up or Down - July 28, 8AM ET',
       }),
-    ).toBe('up-or-down-v2')
+    ).toBe('up-or-down-v3')
     expect(
       resolveDeterministicTranslationVersion({
         locale: 'pt',
@@ -181,21 +188,21 @@ describe('translation batch safety', () => {
         sourceLabel: 'event title',
         sourceText: 'Bitcoin Up or Down - July 28, 8AM ET',
       }),
-    ).toBe('Bitcoin Up or Down - July 28, 8AM ET\0up-or-down-v2')
+    ).toBe('Bitcoin Up or Down - July 28, 8AM ET\0up-or-down-v3')
     expect(
       resolveTranslationSourceFingerprint({
         locale: 'pt',
         sourceLabel: 'event title',
         sourceText: 'Trump approval Up or Down this week?',
       }),
-    ).toBe('Trump approval Up or Down this week?\0up-or-down-weekly-v1')
+    ).toBe('Trump approval Up or Down this week?\0up-or-down-weekly-v2')
     expect(
       resolveTranslationSourceFingerprint({
         locale: 'pt',
         sourceLabel: 'event title',
         sourceText: 'Bitcoin Up or Down - August 2, 4:00PM-8:00PM ET',
       }),
-    ).toBe('Bitcoin Up or Down - August 2, 4:00PM-8:00PM ET\0up-or-down-range-v1')
+    ).toBe('Bitcoin Up or Down - August 2, 4:00PM-8:00PM ET\0up-or-down-range-v2')
   })
 
   it('leaves other title patterns and tag names to the provider', () => {

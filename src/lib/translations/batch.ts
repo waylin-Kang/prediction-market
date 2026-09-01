@@ -22,9 +22,9 @@ const TIMED_UP_OR_DOWN_TITLE_PATTERN =
 const RANGED_UP_OR_DOWN_TITLE_PATTERN =
   /^(.+?) Up or Down - ([A-Z]+) (\d{1,2})(?:, (\d{4}))?, (\d{1,2})(?::(\d{2}))?\s*(AM|PM)-(\d{1,2})(?::(\d{2}))?\s*(AM|PM) ET$/i
 const WEEKLY_UP_OR_DOWN_TITLE_PATTERN = /^(.+?) Up or Down this week\?$/i
-const DETERMINISTIC_UP_OR_DOWN_TRANSLATION_VERSION = 'up-or-down-v2'
-const DETERMINISTIC_RANGED_UP_OR_DOWN_TRANSLATION_VERSION = 'up-or-down-range-v1'
-const DETERMINISTIC_WEEKLY_UP_OR_DOWN_TRANSLATION_VERSION = 'up-or-down-weekly-v1'
+const DETERMINISTIC_UP_OR_DOWN_TRANSLATION_VERSION = 'up-or-down-v3'
+const DETERMINISTIC_RANGED_UP_OR_DOWN_TRANSLATION_VERSION = 'up-or-down-range-v2'
+const DETERMINISTIC_WEEKLY_UP_OR_DOWN_TRANSLATION_VERSION = 'up-or-down-weekly-v2'
 const ENGLISH_MONTH_INDEX: Record<string, number> = {
   april: 3,
   august: 7,
@@ -73,7 +73,7 @@ export function groupTranslationsByLocale<T extends TranslationLocaleRow>(rows: 
   return Array.from(rowsByLocale.values())
 }
 
-function formatLocalizedDate(locale: NonDefaultLocale, date: Date, includeYear: boolean) {
+export function formatLocalizedDate(locale: NonDefaultLocale, date: Date, includeYear: boolean) {
   const formatterKey = `${locale}:${includeYear ? 'year' : 'month-day'}`
   let formatter = dateFormatters.get(formatterKey)
   if (!formatter) {
@@ -89,7 +89,7 @@ function formatLocalizedDate(locale: NonDefaultLocale, date: Date, includeYear: 
   return formatter.format(date)
 }
 
-function formatLocalizedTime(locale: NonDefaultLocale, date: Date) {
+export function formatLocalizedTime(locale: NonDefaultLocale, date: Date) {
   const formatterKey = `${locale}:time`
   let formatter = dateFormatters.get(formatterKey)
   if (!formatter) {
@@ -104,7 +104,7 @@ function formatLocalizedTime(locale: NonDefaultLocale, date: Date) {
   return formatter.format(date)
 }
 
-function parseEnglishDate(englishMonth: string, rawDay: string, year: string | undefined) {
+export function parseEnglishDate(englishMonth: string, rawDay: string, year: string | undefined) {
   const monthIndex = ENGLISH_MONTH_INDEX[englishMonth.toLowerCase()]
   const day = Number(rawDay)
   const numericYear = year ? Number(year) : 2000
@@ -130,7 +130,7 @@ function setEnglishTime(date: Date, rawHour: string, rawMinute: string | undefin
 
 export function resolveDeterministicTranslation(input: {
   locale: NonDefaultLocale
-  sourceLabel: 'event title' | 'tag name'
+  sourceLabel: 'event title' | 'event rules' | 'tag name'
   sourceText: string
 }) {
   if (input.sourceLabel !== 'event title') {
@@ -213,7 +213,7 @@ export function resolveDeterministicTranslation(input: {
 
 export function resolveDeterministicTranslationVersion(input: {
   locale: NonDefaultLocale
-  sourceLabel: 'event title' | 'tag name'
+  sourceLabel: 'event title' | 'event rules' | 'tag name'
   sourceText: string
 }) {
   const sourceText = input.sourceText.trim()
@@ -229,7 +229,7 @@ export function resolveDeterministicTranslationVersion(input: {
 
 export function resolveTranslationSourceFingerprint(input: {
   locale: NonDefaultLocale
-  sourceLabel: 'event title' | 'tag name'
+  sourceLabel: 'event title' | 'event rules' | 'tag name'
   sourceText: string
 }) {
   const deterministicVersion = resolveDeterministicTranslationVersion(input)

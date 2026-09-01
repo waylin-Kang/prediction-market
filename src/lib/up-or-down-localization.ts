@@ -1,31 +1,97 @@
 import type { SupportedLocale } from '@/i18n/locales'
 
+const UP_OR_DOWN_SUBJECT_TRANSLATIONS: Record<string, Partial<Record<SupportedLocale, string>>> = {
+  'Trump approval': {
+    ar: 'تأييد ترامب',
+    de: 'Trump-Zustimmung',
+    es: 'Aprobación de Trump',
+    fr: 'Approbation de Trump',
+    it: 'Approvazione di Trump',
+    ja: 'トランプ支持率',
+    ko: '트럼프 지지율',
+    pl: 'Poparcie dla Trumpa',
+    pt: 'Aprovação de Trump',
+    ru: 'Одобрение Трампа',
+    zh: '特朗普支持率',
+  },
+}
+const UP_OR_DOWN_TITLE_MARKERS = [
+  'up or down',
+  'صعود أم هبوط',
+  'صعودًا أم هبوطًا',
+  'صعودا أم هبوطا',
+  'rauf oder runter',
+  'sube o baja',
+  'en hausse ou en baisse',
+  'sale o scende',
+  '上がる？下がる？',
+  '상승 또는 하락',
+  'wzrośnie czy spadnie',
+  'sobe ou desce',
+  'вырастет или упадет',
+  '上涨还是下跌',
+] as const
+
+function isUpOrDownTitle(title: string) {
+  const normalizedTitle = title.toLowerCase()
+  return UP_OR_DOWN_TITLE_MARKERS.some((marker) => normalizedTitle.includes(marker.toLowerCase()))
+}
+
+function localizeUpOrDownSubject(locale: SupportedLocale, subject: string) {
+  return UP_OR_DOWN_SUBJECT_TRANSLATIONS[subject]?.[locale] ?? subject
+}
+
+export function normalizeLocalizedUpOrDownTitle(locale: SupportedLocale, title: string) {
+  if (!isUpOrDownTitle(title)) {
+    return title
+  }
+
+  let normalized = title
+  for (const [source, translations] of Object.entries(UP_OR_DOWN_SUBJECT_TRANSLATIONS)) {
+    const localized = translations[locale]
+    if (localized) {
+      normalized = normalized.replaceAll(source, localized)
+    }
+  }
+
+  if (locale !== 'zh' || !normalized.includes('上涨还是下跌')) {
+    return normalized
+  }
+
+  return normalized
+    .replace(/^本周\s+/, '本周')
+    .replace(/(\d{1,2}月)\s+(\d{1,2}日)\s*/g, '$1$2')
+    .replace(/\?$/, '？')
+}
+
 function formatUpOrDownPhrase(locale: SupportedLocale, subject: string) {
+  const localizedSubject = localizeUpOrDownSubject(locale, subject)
+
   switch (locale) {
     case 'ar':
-      return `${subject} صعودًا أم هبوطًا`
+      return `${localizedSubject} صعودًا أم هبوطًا`
     case 'de':
-      return `${subject} rauf oder runter`
+      return `${localizedSubject} rauf oder runter`
     case 'es':
-      return `${subject} sube o baja`
+      return `${localizedSubject} sube o baja`
     case 'fr':
-      return `${subject} en hausse ou en baisse`
+      return `${localizedSubject} en hausse ou en baisse`
     case 'it':
-      return `${subject} sale o scende`
+      return `${localizedSubject} sale o scende`
     case 'ja':
-      return `${subject}は上がる？下がる？`
+      return `${localizedSubject}は上がる？下がる？`
     case 'ko':
-      return `${subject} 상승 또는 하락`
+      return `${localizedSubject} 상승 또는 하락`
     case 'pl':
-      return `${subject} wzrośnie czy spadnie`
+      return `${localizedSubject} wzrośnie czy spadnie`
     case 'pt':
-      return `${subject} sobe ou desce`
+      return `${localizedSubject} sobe ou desce`
     case 'ru':
-      return `${subject} вырастет или упадет`
+      return `${localizedSubject} вырастет или упадет`
     case 'zh':
-      return `${subject}会上涨还是下跌`
+      return `${localizedSubject}会上涨还是下跌`
     case 'en':
-      return `${subject} Up or Down`
+      return `${localizedSubject} Up or Down`
   }
 }
 
@@ -34,60 +100,64 @@ export function formatCadenceUpOrDownTitle(locale: SupportedLocale, subject: str
 }
 
 export function formatDatedUpOrDownTitle(locale: SupportedLocale, subject: string, date: string) {
+  const localizedSubject = localizeUpOrDownSubject(locale, subject)
+
   switch (locale) {
     case 'ar':
-      return `${subject} صعودًا أم هبوطًا في ${date}؟`
+      return `${localizedSubject} صعودًا أم هبوطًا في ${date}؟`
     case 'de':
-      return `${subject} am ${date} rauf oder runter?`
+      return `${localizedSubject} am ${date} rauf oder runter?`
     case 'es':
-      return `¿${subject} sube o baja el ${date}?`
+      return `¿${localizedSubject} sube o baja el ${date}?`
     case 'fr':
-      return `${subject} en hausse ou en baisse le ${date} ?`
+      return `${localizedSubject} en hausse ou en baisse le ${date} ?`
     case 'it':
-      return `${subject} sale o scende il ${date}?`
+      return `${localizedSubject} sale o scende il ${date}?`
     case 'ja':
-      return `${date}の${subject}は上がる？下がる？`
+      return `${date}の${localizedSubject}は上がる？下がる？`
     case 'ko':
-      return `${date} ${subject} 상승 또는 하락?`
+      return `${date} ${localizedSubject} 상승 또는 하락?`
     case 'pl':
-      return `${subject} wzrośnie czy spadnie ${date}?`
+      return `${localizedSubject} wzrośnie czy spadnie ${date}?`
     case 'pt':
-      return `${subject} sobe ou desce em ${date}?`
+      return `${localizedSubject} sobe ou desce em ${date}?`
     case 'ru':
-      return `${subject} вырастет или упадет ${date}?`
+      return `${localizedSubject} вырастет или упадет ${date}?`
     case 'zh':
-      return `${date}${subject}会上涨还是下跌？`
+      return `${date}${localizedSubject}会上涨还是下跌？`
     case 'en':
-      return `${subject} Up or Down on ${date}?`
+      return `${localizedSubject} Up or Down on ${date}?`
   }
 }
 
 export function formatWeeklyUpOrDownTitle(locale: SupportedLocale, subject: string) {
+  const localizedSubject = localizeUpOrDownSubject(locale, subject)
+
   switch (locale) {
     case 'ar':
-      return `${subject} صعودًا أم هبوطًا هذا الأسبوع؟`
+      return `${localizedSubject} صعودًا أم هبوطًا هذا الأسبوع؟`
     case 'de':
-      return `${subject} diese Woche rauf oder runter?`
+      return `${localizedSubject} diese Woche rauf oder runter?`
     case 'es':
-      return `¿${subject} sube o baja esta semana?`
+      return `¿${localizedSubject} sube o baja esta semana?`
     case 'fr':
-      return `${subject} en hausse ou en baisse cette semaine ?`
+      return `${localizedSubject} en hausse ou en baisse cette semaine ?`
     case 'it':
-      return `${subject} sale o scende questa settimana?`
+      return `${localizedSubject} sale o scende questa settimana?`
     case 'ja':
-      return `今週の${subject}は上がる？下がる？`
+      return `今週の${localizedSubject}は上がる？下がる？`
     case 'ko':
-      return `이번 주 ${subject} 상승 또는 하락?`
+      return `이번 주 ${localizedSubject} 상승 또는 하락?`
     case 'pl':
-      return `${subject} wzrośnie czy spadnie w tym tygodniu?`
+      return `${localizedSubject} wzrośnie czy spadnie w tym tygodniu?`
     case 'pt':
-      return `${subject} sobe ou desce esta semana?`
+      return `${localizedSubject} sobe ou desce esta semana?`
     case 'ru':
-      return `${subject} вырастет или упадет на этой неделе?`
+      return `${localizedSubject} вырастет или упадет на этой неделе?`
     case 'zh':
-      return `本周${subject}会上涨还是下跌？`
+      return `本周${localizedSubject}会上涨还是下跌？`
     case 'en':
-      return `${subject} Up or Down this week?`
+      return `${localizedSubject} Up or Down this week?`
   }
 }
 
