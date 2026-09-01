@@ -1,3 +1,6 @@
+'use client'
+
+import { useExtracted, useLocale } from 'next-intl'
 import Image from 'next/image'
 
 import type { ProfileLinkStats } from '@/lib/data-api/profile-link-stats'
@@ -21,7 +24,7 @@ interface ProfileActivityTooltipCardProps {
   isLoading?: boolean
 }
 
-function formatJoinedLabel(joinedAt?: string | null) {
+function formatJoinedDate(joinedAt: string | null | undefined, locale: string) {
   if (!joinedAt) {
     return null
   }
@@ -31,7 +34,7 @@ function formatJoinedLabel(joinedAt?: string | null) {
     return null
   }
 
-  return `Joined ${parsed.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`
+  return parsed.toLocaleDateString(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' })
 }
 
 function normalizeStatValue(value?: number | string | null) {
@@ -106,8 +109,11 @@ export default function ProfileActivityTooltipCard({
   stats,
   isLoading = false,
 }: ProfileActivityTooltipCardProps) {
+  const t = useExtracted()
+  const locale = useLocale()
   const profileHref = profile.href as any
-  const joinedLabel = formatJoinedLabel(profile.joinedAt)
+  const joinedDate = formatJoinedDate(profile.joinedAt, locale)
+  const joinedLabel = joinedDate ? t('Joined {date}', { date: joinedDate }) : null
   const positionsValue = formatStatValue(stats?.positionsValue)
   const volumeValue = formatStatValue(stats?.volume)
   const profitLossNumber =
@@ -133,7 +139,13 @@ export default function ProfileActivityTooltipCard({
           {showPlaceholder ? (
             <div aria-hidden="true" className="absolute inset-0 rounded-full" style={fallbackStyle} />
           ) : (
-            <Image src={avatarUrl} alt={`${profile.username} avatar`} fill sizes="56px" className="object-cover" />
+            <Image
+              src={avatarUrl}
+              alt={t('{username} avatar', { username: profile.username })}
+              fill
+              sizes="56px"
+              className="object-cover"
+            />
           )}
         </div>
         <div className="min-w-0 flex-1 text-left">
@@ -165,15 +177,15 @@ export default function ProfileActivityTooltipCard({
           <>
             <div className="space-y-1">
               <div className="text-sm font-semibold text-foreground tabular-nums">{positionsValue}</div>
-              <div className="text-xs font-medium text-muted-foreground">Positions</div>
+              <div className="text-xs font-medium text-muted-foreground">{t('Positions')}</div>
             </div>
             <div className="space-y-1">
               <div className={cn('text-sm font-semibold tabular-nums', profitLossClassName)}>{profitLossValue}</div>
-              <div className="text-xs font-medium text-muted-foreground">Profit/loss</div>
+              <div className="text-xs font-medium text-muted-foreground">{t('Profit/loss')}</div>
             </div>
             <div className="space-y-1">
               <div className="text-sm font-semibold text-foreground tabular-nums">{volumeValue}</div>
-              <div className="text-xs font-medium text-muted-foreground">Volume</div>
+              <div className="text-xs font-medium text-muted-foreground">{t('Volume')}</div>
             </div>
           </>
         )}
