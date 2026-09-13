@@ -314,11 +314,20 @@ export function useEventPriceHistory({
     retry: 2,
   })
   const priceHistoryByMarket = priceHistoryQuery.data
+  const isRangeTransitionPlaceholder = priceHistoryQuery.isPlaceholderData && priceHistoryQuery.dataUpdatedAt === 0
 
   const normalizedHistory = useMemo(() => {
+    if (isRangeTransitionPlaceholder) {
+      return {
+        points: [],
+        latestSnapshot: {},
+        latestRawPrices: {},
+      }
+    }
+
     const normalized = buildNormalizedHistory(priceHistoryByMarket ?? {})
     return clipNormalizedHistoryToResolvedAt(normalized, eventResolvedAt)
-  }, [priceHistoryByMarket, eventResolvedAt])
+  }, [eventResolvedAt, isRangeTransitionPlaceholder, priceHistoryByMarket])
 
   return {
     normalizedHistory: normalizedHistory.points,
@@ -326,6 +335,7 @@ export function useEventPriceHistory({
     latestRawPrices: normalizedHistory.latestRawPrices,
     isPending: priceHistoryQuery.isPending,
     isFetching: priceHistoryQuery.isFetching,
+    isRangeTransitioning: isRangeTransitionPlaceholder,
     isError: priceHistoryQuery.isError,
     refetch: priceHistoryQuery.refetch,
   }
