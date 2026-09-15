@@ -1,6 +1,10 @@
 import type { DynamicFeeSchedule, FeeRatePayload } from '@/lib/trading-fees'
 
-import { defaultPublicRuntimeConfig, normalizePublicRuntimeEnvValue } from '@/lib/public-runtime-config.shared'
+import {
+  defaultPublicRuntimeConfig,
+  normalizePublicRuntimeEnvValue,
+  resolvePublicRuntimeEnv,
+} from '@/lib/public-runtime-config.shared'
 import { parseDynamicFeeSchedule } from '@/lib/trading-fees'
 
 const MAX_LIMIT_PRICE = 99.9
@@ -16,8 +20,16 @@ interface OrderBookSummaryResponse {
   asks?: OrderbookLevelSummary[]
 }
 
+function resolveDefaultClobUrl() {
+  if (typeof window !== 'undefined') {
+    return normalizePublicRuntimeEnvValue(window.__PUBLIC_RUNTIME_CONFIG__?.clobUrl, defaultPublicRuntimeConfig.clobUrl)
+  }
+
+  return resolvePublicRuntimeEnv(process.env).clobUrl
+}
+
 export function resolveClobUrl(value?: string) {
-  return normalizePublicRuntimeEnvValue(value, defaultPublicRuntimeConfig.clobUrl)
+  return normalizePublicRuntimeEnvValue(value, resolveDefaultClobUrl())
 }
 
 export async function fetchClobJson<T>(path: string, body: unknown, clobUrl = resolveClobUrl()): Promise<T> {
