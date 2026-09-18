@@ -68,6 +68,10 @@ async function CachedEventMarketPageContent({ slug, market }: { slug: string; ma
   if (!eventPageData) {
     notFound()
   }
+  const seriesSlug = eventPageData.event.series_slug?.trim() ?? ''
+  if (seriesSlug) {
+    cacheTag(cacheTags.seriesEvents(seriesSlug))
+  }
 
   const faqItems = await buildTranslatedEventFaqItems({
     event: eventPageData.event,

@@ -76,10 +76,13 @@ export async function loadEventPagePublicContentData(
   let seriesEvents: EventSeriesEntry[] = []
   let liveChartConfig: EventLiveChartConfig | null = null
 
-  if (event.series_slug) {
+  const seriesSlug = event.series_slug?.trim() ?? ''
+  if (seriesSlug) {
+    cacheTag(cacheTags.seriesEvents(seriesSlug))
+
     const [seriesEventsResult, liveChartConfigResult] = await Promise.all([
-      EventRepository.getSeriesEventsBySeriesSlug(event.series_slug),
-      EventRepository.getLiveChartConfigBySeriesSlug(event.series_slug),
+      EventRepository.getSeriesEventsBySeriesSlug(seriesSlug),
+      EventRepository.getLiveChartConfigBySeriesSlug(seriesSlug),
     ])
 
     if (seriesEventsResult.error) {
@@ -95,7 +98,7 @@ export async function loadEventPagePublicContentData(
     }
   }
 
-  if (event.series_slug && !seriesEvents.some((seriesEvent) => seriesEvent.slug === event.slug)) {
+  if (seriesSlug && !seriesEvents.some((seriesEvent) => seriesEvent.slug === event.slug)) {
     seriesEvents = [
       {
         id: event.id,
