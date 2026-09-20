@@ -61,14 +61,16 @@ describe('filterToolbar', () => {
     expect(onFiltersChange).toHaveBeenCalledWith({ hideSports: true })
   })
 
-  it('collapses the search input behind an icon button when requested', () => {
+  it('collapses the search input on desktop while keeping it expanded on mobile', () => {
     const onFiltersChange = mock()
 
     render(<FilterToolbar collapsibleSearch filters={FILTERS} onFiltersChange={onFiltersChange} />)
 
-    expect(screen.queryByTestId('filter-search-input')).not.toBeInTheDocument()
+    const mobileSearchInput = screen.getByTestId('filter-search-input')
+    expect(mobileSearchInput.parentElement?.parentElement).toHaveClass('lg:hidden')
 
     const searchTrigger = screen.getByRole('button', { name: 'Open search' })
+    expect(searchTrigger).toHaveClass('hidden', 'lg:inline-flex')
     expect(searchTrigger).toHaveAttribute('aria-expanded', 'false')
 
     fireEvent.click(searchTrigger)
@@ -87,7 +89,7 @@ describe('filterToolbar', () => {
 
     fireEvent.click(document.body)
 
-    expect(screen.queryByTestId('filter-search-input')).not.toBeInTheDocument()
+    expect(screen.getByTestId('filter-search-input').parentElement?.parentElement).toHaveClass('lg:hidden')
     expect(screen.getByTestId('filter-search-trigger')).toBeVisible()
     expect(document.activeElement).toBe(screen.getByTestId('filter-search-trigger'))
 
@@ -109,7 +111,7 @@ describe('filterToolbar', () => {
 
     fireEvent.click(settingsTrigger)
 
-    expect(screen.queryByTestId('filter-search-input')).not.toBeInTheDocument()
+    expect(screen.getByTestId('filter-search-input').parentElement?.parentElement).toHaveClass('lg:hidden')
     expect(settingsTrigger).toHaveAttribute('aria-expanded', 'true')
   })
 
@@ -130,7 +132,7 @@ describe('filterToolbar', () => {
 
     fireEvent.keyDown(searchInput, { key: 'Escape' })
 
-    expect(screen.queryByTestId('filter-search-input')).not.toBeInTheDocument()
+    expect(screen.getByTestId('filter-search-input').parentElement?.parentElement).toHaveClass('lg:hidden')
     expect(document.activeElement).toBe(screen.getByTestId('filter-search-trigger'))
   })
 

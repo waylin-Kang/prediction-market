@@ -76,20 +76,26 @@ export default function FilterToolbarSearchInput({
     const openSearchLabel = t('Open search')
 
     return (
-      <Button
-        ref={searchTriggerRef}
-        type="button"
-        variant="ghost"
-        size="icon"
-        title={openSearchLabel}
-        aria-label={openSearchLabel}
-        aria-expanded={false}
-        data-filter-search-trigger="true"
-        data-testid="filter-search-trigger"
-        onClick={() => setIsOpen(true)}
-      >
-        <SearchIcon />
-      </Button>
+      <>
+        <div className="lg:hidden">
+          <FilterToolbarSearchInputField search={search} onSearchChange={onSearchChange} />
+        </div>
+        <Button
+          ref={searchTriggerRef}
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="hidden lg:inline-flex"
+          title={openSearchLabel}
+          aria-label={openSearchLabel}
+          aria-expanded={false}
+          data-filter-search-trigger="true"
+          data-testid="filter-search-trigger"
+          onClick={() => setIsOpen(true)}
+        >
+          <SearchIcon />
+        </Button>
+      </>
     )
   }
 
