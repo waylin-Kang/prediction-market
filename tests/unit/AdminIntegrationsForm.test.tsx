@@ -55,6 +55,11 @@ const props = {
     secretKeyConfigured: false,
     webhookSecretConfigured: false,
   },
+  paymentsSettings: {
+    enabled: false,
+    operatorKeyConfigured: false,
+    operatorDomainChanged: false,
+  },
 }
 
 describe('adminIntegrationsForm', () => {
@@ -100,14 +105,17 @@ describe('adminIntegrationsForm', () => {
       'thesportsdb',
       'pandascore',
       'lifi',
+      'on-off-ramp-payments',
       'polymarket',
       'kuest-support',
       'custom',
     ])
     expect(screen.getByRole('button', { name: /TheSportsDB/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /PandaScore/ })).toBeInTheDocument()
-    expect(container.querySelectorAll('img')).toHaveLength(8)
+    expect(container.querySelectorAll('img')).toHaveLength(9)
     expect(container.querySelector('img[src="/images/logos/sumsub.svg"]')).toBeInTheDocument()
+    expect(container.querySelector('img[src="/images/logos/meld-icon.svg"]')).toBeInTheDocument()
+    expect(container.querySelector('img[src="/images/logos/kuest-icon.svg"]')).toBeInTheDocument()
     expect(container.querySelector('[data-settings-section="custom"] svg')).toBeInTheDocument()
   })
 
@@ -126,5 +134,61 @@ describe('adminIntegrationsForm', () => {
     for (const section of providerSections) {
       expect(container.querySelector(`[data-settings-section="${section}"] a[href^="http"]`)).toBeInTheDocument()
     }
+  })
+
+  it('offers automatic domain registration and never renders an operator key input', () => {
+    render(
+      <AdminIntegrationsForm
+        {...props}
+        paymentsSettings={{ enabled: true, operatorKeyConfigured: true, operatorDomainChanged: false }}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /On\/Off Ramp Payments/ }))
+
+    expect(
+      screen.getByText('Payments are active. The operator key is encrypted in this site’s server settings.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByLabelText('Kuest operator key')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Reverify this domain and replace its operator key' }),
+    ).toBeInTheDocument()
+  })
+
+  it('allows an administrator to turn payments on before a key is stored', () => {
+    render(<AdminIntegrationsForm {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: /On\/Off Ramp Payments/ }))
+
+    const enableSwitch = screen.getByRole('switch', { name: 'Enable payments' })
+    expect(enableSwitch).not.toBeDisabled()
+    expect(document.querySelector('input[name="payments_enabled_changed"]')).toHaveValue('false')
+    fireEvent.click(enableSwitch)
+    expect(document.querySelector('input[name="payments_enabled_changed"]')).toHaveValue('true')
+    expect(
+      screen.getByText('Enable and save to verify this site and register its operator automatically.'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the domain migration state and the previous return-domain requirement', () => {
+    render(
+      <AdminIntegrationsForm
+        {...props}
+        paymentsSettings={{ enabled: false, operatorKeyConfigured: true, operatorDomainChanged: true }}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /On\/Off Ramp Payments/ }))
+
+    expect(
+      screen.getByText(
+        'The site domain changed. Verify the new domain to migrate this operator and rotate its key before payments can resume.',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Keep the previous domain serving payment return pages for up to 30 days after a domain migration.',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Reverify this domain and replace its operator key' }),
+    ).toBeInTheDocument()
   })
 })
