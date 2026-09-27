@@ -178,6 +178,8 @@
   "mpJrBL": "银行卡",
   "-OY79E": "银行转账",
   "xSVKMu": "Meld 付款方式",
+  "gyIBUo": "从其他网络转入",
+  "4_bR7q": "转为 Polygon 上的 USDC",
   "_-K9uq": "转账",
   "tAmJ95": "复制钱包地址或扫描二维码",
   "CeukLj": "转账方式图标",
@@ -2357,6 +2359,7 @@
   "cxkY9n": "脚本",
   "i1xZvc": "支持小组件",
   "IwBc9T": "在此粘贴你的 JavaScript 代码片段",
+  "1nQfj-": "运行位置",
   "9b23Jp": "无法从 OpenRouter 加载模型。请稍后重试。",
   "arwbqo": "连接分析、AI、身份验证、体育数据、流动性和自定义工具。",
   "vGhAxH": "未认证。",
@@ -2614,6 +2617,7 @@
   "3_8dqr": "连接日志",
   "MwwRL8": "暂无事件。",
   "r0l0Kg": "获取帮助",
+  "8587of": "付款状态已在原始标签页中打开。如果此标签页仍未关闭，请手动关闭，或前往主页。",
   "gU40cS": "付款已确认。正在刷新 Deposit Wallet 余额。",
   "ovxl5A": "付款未完成。你可以尝试其他方式。",
   "L8NB9v": "付款已取消或已过期。",
@@ -2755,7 +2759,5 @@
   "aetEa0": "在此设备上接收您关注的用户的交易提醒。",
   "t-2AAt": "无法更新关注状态。",
   "-RU9lJ": "{trader} 在 {marketTitle} 买入了 {shares} 份 {outcome}",
-  "l7onJY": "{trader} 在 {marketTitle} 卖出了 {shares} 份 {outcome}",
-  "8587of": "付款状态已在原始标签页中打开。如果此标签页仍未关闭，请手动关闭，或前往主页。",
-  "1nQfj-": "运行位置"
+  "l7onJY": "{trader} 在 {marketTitle} 卖出了 {shares} 份 {outcome}"
 }

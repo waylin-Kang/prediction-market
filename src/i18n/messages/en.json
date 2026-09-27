@@ -178,6 +178,8 @@
   "mpJrBL": "card",
   "-OY79E": "bank wire",
   "xSVKMu": "Meld payment method",
+  "gyIBUo": "Transfer from another network",
+  "4_bR7q": "To USDC on Polygon",
   "_-K9uq": "Transfer Funds",
   "tAmJ95": "copy wallet or scan QR code",
   "CeukLj": "Transfer method icon",
@@ -2357,6 +2359,7 @@
   "cxkY9n": "Script",
   "i1xZvc": "Support widget",
   "IwBc9T": "Paste your JavaScript snippet here",
+  "1nQfj-": "Run on",
   "9b23Jp": "Unable to load models from OpenRouter. Please try again later.",
   "arwbqo": "Connect analytics, AI, identity, sports data, liquidity, and custom tools.",
   "vGhAxH": "Unauthenticated.",
@@ -2614,6 +2617,7 @@
   "3_8dqr": "Connection Log",
   "MwwRL8": "No events yet.",
   "r0l0Kg": "Get Help",
+  "8587of": "Your payment status is open in the original tab. Close this tab manually if it stays open, or go to the home page.",
   "gU40cS": "Payment confirmed. Your Deposit Wallet balance is being refreshed.",
   "ovxl5A": "The payment was not completed. You can try another option.",
   "L8NB9v": "The payment was cancelled or expired.",
@@ -2755,7 +2759,5 @@
   "aetEa0": "Get trade alerts from people you follow on this device.",
   "t-2AAt": "Could not update follow status.",
   "-RU9lJ": "{trader} bought {shares} {outcome} in {marketTitle}",
-  "l7onJY": "{trader} sold {shares} {outcome} in {marketTitle}",
-  "8587of": "Your payment status is open in the original tab. Close this tab manually if it stays open, or go to the home page.",
-  "1nQfj-": "Run on"
+  "l7onJY": "{trader} sold {shares} {outcome} in {marketTitle}"
 }

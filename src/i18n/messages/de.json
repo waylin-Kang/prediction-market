@@ -178,6 +178,8 @@
   "mpJrBL": "Karte",
   "-OY79E": "Banküberweisung",
   "xSVKMu": "Meld-Zahlungsmethode",
+  "gyIBUo": "Von einem anderen Netzwerk übertragen",
+  "4_bR7q": "Zu USDC auf Polygon",
   "_-K9uq": "Geld übertragen",
   "tAmJ95": "Wallet kopieren oder QR-Code scannen",
   "CeukLj": "Symbol der Übertragungsmethode",
@@ -2357,6 +2359,7 @@
   "cxkY9n": "Skript",
   "i1xZvc": "Support-Widget",
   "IwBc9T": "JavaScript-Snippet hier einfügen",
+  "1nQfj-": "Ausführen auf",
   "9b23Jp": "Modelle von OpenRouter konnten nicht geladen werden. Bitte später erneut versuchen.",
   "arwbqo": "Verbinden Sie Analyse, KI, Identität, Sportdaten, Liquidität und benutzerdefinierte Tools.",
   "vGhAxH": "Nicht authentifiziert.",
@@ -2614,6 +2617,7 @@
   "3_8dqr": "Verbindungsprotokoll",
   "MwwRL8": "Noch keine Ereignisse.",
   "r0l0Kg": "Hilfe erhalten",
+  "8587of": "Der Zahlungsstatus ist im ursprünglichen Tab geöffnet. Schließen Sie diesen Tab manuell, falls er geöffnet bleibt, oder gehen Sie zur Startseite.",
   "gU40cS": "Zahlung bestätigt. Das Guthaben Ihrer Deposit Wallet wird aktualisiert.",
   "ovxl5A": "Die Zahlung wurde nicht abgeschlossen. Sie können eine andere Option versuchen.",
   "L8NB9v": "Die Zahlung wurde storniert oder ist abgelaufen.",
@@ -2755,7 +2759,5 @@
   "aetEa0": "Erhalte auf diesem Gerät Handelsbenachrichtigungen von Personen, denen du folgst.",
   "t-2AAt": "Follow-Status konnte nicht aktualisiert werden.",
   "-RU9lJ": "{trader} kaufte {shares} {outcome} in {marketTitle}",
-  "l7onJY": "{trader} verkaufte {shares} {outcome} in {marketTitle}",
-  "8587of": "Der Zahlungsstatus ist im ursprünglichen Tab geöffnet. Schließen Sie diesen Tab manuell, falls er geöffnet bleibt, oder gehen Sie zur Startseite.",
-  "1nQfj-": "Ausführen auf"
+  "l7onJY": "{trader} verkaufte {shares} {outcome} in {marketTitle}"
 }

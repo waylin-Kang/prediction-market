@@ -27,7 +27,7 @@ import { useLiFiWalletTokens } from '@/hooks/useLiFiWalletTokens'
 import { useSiteIdentity } from '@/hooks/useSiteIdentity'
 import { formatDisplayAmount } from '@/lib/amount-input'
 import { COLLATERAL_TOKEN_ADDRESS } from '@/lib/contracts'
-import { DEFAULT_CHAIN_ID, IS_TEST_MODE } from '@/lib/network'
+import { DEFAULT_CHAIN_ID, IS_TEST_MODE, POLYGON_MAINNET_CHAIN_ID } from '@/lib/network'
 import { cn } from '@/lib/utils'
 import { defaultViemNetwork } from '@/lib/viem-network'
 
@@ -38,6 +38,7 @@ export function WalletDepositModal(props: WalletDepositModalProps) {
   const {
     open,
     onOpenChange,
+    onBridge,
     isMobile,
     walletAddress,
     walletEoaAddress,
@@ -57,6 +58,8 @@ export function WalletDepositModal(props: WalletDepositModalProps) {
   const site = useSiteIdentity()
   const siteLabel = siteName ?? site.name
   const isDirectTestModeDeposit = IS_TEST_MODE
+  const canUseLiFiBridge =
+    DEFAULT_CHAIN_ID === POLYGON_MAINNET_CHAIN_ID && hasDeployedDepositWallet && Boolean(walletAddress)
   const tokensQueryEnabled = open && (view === 'wallets' || view === 'amount' || view === 'confirm')
   const { balance: directWalletBalance, isLoadingBalance: isLoadingDirectWalletBalance } = useBalance({
     depositWalletAddress: walletEoaAddress,
@@ -153,8 +156,10 @@ export function WalletDepositModal(props: WalletDepositModalProps) {
     view === 'fund' ? (
       <WalletFundMenu
         onBuy={onBuy}
+        onBridge={onBridge}
         onReceive={() => onViewChange('receive')}
         onWallet={() => onViewChange('wallets')}
+        canBridge={canUseLiFiBridge}
         disabledReceive={!hasDeployedDepositWallet}
         canBuyMeld={canBuyMeld}
         walletEoaAddress={walletEoaAddress}
