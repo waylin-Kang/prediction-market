@@ -2,19 +2,24 @@
 
 import { getExtracted } from 'next-intl/server'
 import { revalidatePath } from 'next/cache'
+import { after } from 'next/server'
 import { z } from 'zod'
 
 import {
   ensureEnabledLocales,
   ensureLocaleOrder,
+  getAutomaticTranslationsEnabledFromSettings,
+  getEnabledLocalesFromSettings,
+  getRulesTranslationsEnabledFromSettings,
   serializeEnabledLocales,
   serializeLocaleOrder,
 } from '@/i18n/locale-settings'
-import { resolveSupportedLocale, SUPPORTED_LOCALES } from '@/i18n/locales'
+import { DEFAULT_LOCALE, resolveSupportedLocale, SUPPORTED_LOCALES } from '@/i18n/locales'
 import { loadOpenRouterProviderSettings } from '@/lib/ai/market-context-config'
 import { DEFAULT_ERROR_MESSAGE } from '@/lib/constants'
 import { SettingsRepository } from '@/lib/db/queries/settings'
 import { UserRepository } from '@/lib/db/queries/user'
+import { triggerTranslationEnqueue } from '@/lib/translations/trigger-enqueue'
 
 export interface LocalesSettingsActionState {
   error: string | null
@@ -101,6 +106,12 @@ export async function updateLocalesSettingsAction(
 
   const value = serializeEnabledLocales(parsed.data.enabledLocales)
   const openRouterSettings = await loadOpenRouterProviderSettings()
+  const previousSettings = openRouterSettings.allSettings
+  const previouslyEnabledLocales = getEnabledLocalesFromSettings(previousSettings)
+  const previouslyAutomaticTranslationsEnabled =
+    Boolean(previousSettings?.i18n?.automatic_translations_enabled?.value?.trim()) &&
+    getAutomaticTranslationsEnabledFromSettings(previousSettings)
+  const previouslyRulesTranslationsEnabled = getRulesTranslationsEnabledFromSettings(previousSettings)
   const canEnableAutomaticTranslations = openRouterSettings.configured
   const normalizedAutomaticTranslationsEnabled =
     canEnableAutomaticTranslations && parsed.data.automaticTranslationsEnabled
@@ -132,6 +143,16 @@ export async function updateLocalesSettingsAction(
 
   if (error) {
     return { error: DEFAULT_ERROR_MESSAGE }
+  }
+
+  if (
+    parsed.data.enabledLocales.some((enabledLocale) => enabledLocale !== DEFAULT_LOCALE) &&
+    (normalizedAutomaticTranslationsEnabled || normalizedRulesTranslationsEnabled) &&
+    (parsed.data.enabledLocales.some((enabledLocale) => !previouslyEnabledLocales.includes(enabledLocale)) ||
+      (normalizedAutomaticTranslationsEnabled && !previouslyAutomaticTranslationsEnabled) ||
+      (normalizedRulesTranslationsEnabled && !previouslyRulesTranslationsEnabled))
+  ) {
+    after(() => triggerTranslationEnqueue())
   }
 
   revalidatePath('/admin/locales')
