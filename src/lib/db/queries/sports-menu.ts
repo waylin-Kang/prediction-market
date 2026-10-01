@@ -1,5 +1,5 @@
 import { and, asc, eq, gt, or, sql } from 'drizzle-orm'
-import { cacheTag, unstable_cache } from 'next/cache'
+import { cacheLife, cacheTag, unstable_cache } from 'next/cache'
 
 import type { SportsMenuActiveCountRow } from '@/lib/sports-menu-counts'
 import type { SportsMenuEntry } from '@/lib/sports-menu-types'
@@ -189,8 +189,8 @@ const getCachedSportsMenuRows = unstable_cache(
   },
   ['sports-menu-items-v2'],
   {
-    revalidate: 1800,
-    tags: [cacheTags.sportsMenu],
+    revalidate: 31_536_000,
+    tags: [cacheTags.sportsMenuStructure],
   },
 )
 
@@ -251,7 +251,7 @@ const getCachedActiveSportsCountRows = unstable_cache(
   ['sports-menu-active-count-rows-v4'],
   {
     revalidate: 900,
-    tags: [cacheTags.sportsMenu, cacheTags.eventsList],
+    tags: [cacheTags.eventsList],
   },
 )
 
@@ -375,7 +375,8 @@ export async function getSportsSlugResolverFromDb() {
 
 async function getCachedMenuEntries(vertical: SportsVertical): Promise<QueryResult<SportsMenuEntry[]>> {
   'use cache'
-  cacheTag(cacheTags.sportsMenu)
+  cacheLife('max')
+  cacheTag(cacheTags.sportsMenuStructure)
 
   const rows = await getRequiredSportsMenuRows()
 
@@ -386,8 +387,8 @@ async function getCachedMenuEntries(vertical: SportsVertical): Promise<QueryResu
 
 async function getCachedLayoutData(vertical: SportsVertical): Promise<QueryResult<SportsMenuLayoutData>> {
   'use cache'
-  cacheTag(cacheTags.sportsMenu)
-  cacheTag(cacheTags.eventsList)
+  cacheLife('default')
+  cacheTag(cacheTags.eventsList, cacheTags.sportsMenuStructure)
 
   const [rows, activeCountRows] = await Promise.all([getRequiredSportsMenuRows(), getCachedActiveSportsCountRows()])
 
@@ -408,7 +409,8 @@ async function getCachedLayoutData(vertical: SportsVertical): Promise<QueryResul
 
 async function getCachedCanonicalSlugByAlias(alias: string): Promise<QueryResult<string | null>> {
   'use cache'
-  cacheTag(cacheTags.sportsMenu)
+  cacheLife('max')
+  cacheTag(cacheTags.sportsMenuStructure)
 
   const rows = await getRequiredSportsMenuRows()
 
@@ -421,7 +423,8 @@ async function getCachedCanonicalSlugByAlias(alias: string): Promise<QueryResult
 
 async function getCachedLandingHref(vertical: SportsVertical): Promise<QueryResult<string | null>> {
   'use cache'
-  cacheTag(cacheTags.sportsMenu)
+  cacheLife('max')
+  cacheTag(cacheTags.sportsMenuStructure)
 
   const rows = await getRequiredSportsMenuRows()
 
@@ -434,7 +437,8 @@ async function getCachedLandingHref(vertical: SportsVertical): Promise<QueryResu
 
 async function getCachedFuturesHref(vertical: SportsVertical): Promise<QueryResult<string | null>> {
   'use cache'
-  cacheTag(cacheTags.sportsMenu)
+  cacheLife('max')
+  cacheTag(cacheTags.sportsMenuStructure)
 
   const rows = await getRequiredSportsMenuRows()
 
