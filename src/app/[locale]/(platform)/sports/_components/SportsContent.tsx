@@ -1,7 +1,8 @@
 'use cache'
 
-import { cacheTag } from 'next/cache'
+import { cacheLife, cacheTag } from 'next/cache'
 
+import type { SupportedLocale } from '@/i18n/locales'
 import type { SportsVertical } from '@/lib/sports-vertical'
 import type { Event } from '@/types'
 
@@ -21,23 +22,32 @@ interface SportsContentProps {
   sportsSection?: SportsSection | null
 }
 
-export default async function SportsContent({
-  initialTag = 'sports',
-  mainTag = initialTag,
-  initialMode = 'all',
-  sportsSportSlug = null,
-  sportsSection = null,
-}: SportsContentProps) {
-  cacheTag(cacheTags.eventsList)
-  const locale = await getRootLocale()
+export interface SportsContentData {
+  initialEvents: Event[]
+  hasQueryError: boolean
+}
 
-  let initialEvents: Event[] = []
+export async function loadSportsContentData({
+  initialTag,
+  locale,
+  sportsSection,
+  sportsSportSlug,
+}: {
+  initialTag: string
+  locale: SupportedLocale
+  sportsSection: SportsSection | null
+  sportsSportSlug: string | null
+}): Promise<SportsContentData> {
+  cacheTag(cacheTags.eventsList)
+
   const normalizedSportsSportSlug = sportsSportSlug?.trim().toLowerCase() || ''
   const normalizedSportsSection = sportsSection?.trim().toLowerCase() || ''
   const sportsVertical: SportsVertical | '' = initialTag === 'sports' || initialTag === 'esports' ? initialTag : ''
   const resolvedSportsSection: SportsSection | '' =
     normalizedSportsSection === 'games' || normalizedSportsSection === 'props' ? normalizedSportsSection : ''
 
+  let initialEvents: Event[] = []
+  let hasQueryError = false
   try {
     const { data: events, error } = await EventRepository.listEvents({
       tag: initialTag,
@@ -50,11 +60,44 @@ export default async function SportsContent({
       sportsSection: resolvedSportsSection,
     })
 
-    if (!error) {
+    hasQueryError = Boolean(error)
+    if (!hasQueryError) {
       initialEvents = events ?? []
     }
   } catch {
-    initialEvents = []
+    hasQueryError = true
+  }
+
+  return { initialEvents, hasQueryError }
+}
+
+export default async function SportsContent({
+  initialTag = 'sports',
+  mainTag = initialTag,
+  initialMode = 'all',
+  sportsSportSlug = null,
+  sportsSection = null,
+}: SportsContentProps) {
+  cacheTag(cacheTags.eventsList)
+  const locale = await getRootLocale()
+
+  const normalizedSportsSportSlug = sportsSportSlug?.trim().toLowerCase() || ''
+  const normalizedSportsSection = sportsSection?.trim().toLowerCase() || ''
+  const sportsVertical: SportsVertical | '' = initialTag === 'sports' || initialTag === 'esports' ? initialTag : ''
+  const resolvedSportsSection: SportsSection | '' =
+    normalizedSportsSection === 'games' || normalizedSportsSection === 'props' ? normalizedSportsSection : ''
+
+  const { initialEvents, hasQueryError } = await loadSportsContentData({
+    initialTag,
+    locale,
+    sportsSection,
+    sportsSportSlug,
+  })
+
+  if (hasQueryError || initialEvents.length > 0) {
+    cacheLife('hours')
+  } else {
+    cacheLife('days')
   }
 
   return (
