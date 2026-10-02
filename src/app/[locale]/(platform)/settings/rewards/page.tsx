@@ -40,6 +40,10 @@ function parseRawAmount(value: string) {
   }
 }
 
+function getRequestTime() {
+  return new Date()
+}
+
 function buildResolutionRewardSeries(
   account: DataApiRewardAccount | null,
   rewardMarkets: DataApiRewardMarket[],
@@ -161,7 +165,7 @@ export default async function RewardsSettingsPage({ params }: RewardsSettingsPag
       }),
     ),
   ).then((markets) => markets.filter((market): market is DataApiRewardMarket => market !== null))
-  const now = new Date()
+  const now = getRequestTime()
   let totalAffiliateFees = 0
   let referredVolume = 0
 
