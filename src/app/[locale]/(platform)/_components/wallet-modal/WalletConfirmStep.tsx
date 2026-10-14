@@ -45,10 +45,16 @@ function WalletConfirmStep({
 }) {
   const t = useExtracted()
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [hasExecutionError, setHasExecutionError] = useState(false)
   const [isBreakdownOpen, setIsBreakdownOpen] = useState(false)
   const formattedAmount = formatDisplayAmount(amountValue)
   const displayAmount = formattedAmount && formattedAmount.trim() !== '' ? formattedAmount : '0.00'
-  const { quote: fetchedQuote, isLoadingQuote } = useLiFiQuote({
+  const {
+    quote: fetchedQuote,
+    isLoadingQuote,
+    isQuoteError,
+    refetchQuote,
+  } = useLiFiQuote({
     fromToken: selectedToken,
     amountValue,
     fromAddress: walletEoaAddress,
@@ -59,22 +65,32 @@ function WalletConfirmStep({
   const effectiveQuote = quote ?? (executionMode === 'lifi' ? fetchedQuote : null)
   const hasAmount = amountValue.trim() !== ''
   const isQuoteLoading = isLoadingQuote && hasAmount
+  const hasQuoteError = executionMode === 'lifi' && isQuoteError && !isLoadingQuote
   const status: 'quote' | 'gas' | 'ready' = effectiveQuote ? 'ready' : isLoadingQuote ? 'gas' : 'quote'
-  const { execute: executeLiFi, isExecuting: isExecutingLiFi } = useLiFiExecution({
+  const {
+    execute: executeLiFi,
+    isExecuting: isExecutingLiFi,
+    pendingTransaction: pendingLiFiTransaction,
+  } = useLiFiExecution({
     fromToken: selectedToken,
     amountValue,
     fromAddress: walletEoaAddress,
     toAddress: walletAddress,
   })
-  const { execute: executeDirectUsdcDeposit, isExecuting: isExecutingDirectUsdcDeposit } =
-    useDirectUsdcDepositExecution({
-      amountValue,
-      fromAddress: walletEoaAddress,
-      toAddress: walletAddress,
-    })
+  const {
+    execute: executeDirectUsdcDeposit,
+    isExecuting: isExecutingDirectUsdcDeposit,
+    pendingTransaction: pendingDirectTransaction,
+  } = useDirectUsdcDepositExecution({
+    amountValue,
+    fromAddress: walletEoaAddress,
+    toAddress: walletAddress,
+  })
   const execute = executionMode === 'direct-usdc' ? executeDirectUsdcDeposit : executeLiFi
   const isExecuting = executionMode === 'direct-usdc' ? isExecutingDirectUsdcDeposit : isExecutingLiFi
-  const isCtaDisabled = isExecuting || isSubmitting || !effectiveQuote || isLoadingQuote
+  const pendingTransaction = executionMode === 'direct-usdc' ? pendingDirectTransaction : pendingLiFiTransaction
+  const isCtaDisabled =
+    isExecuting || isSubmitting || (!pendingTransaction && ((!effectiveQuote && !hasQuoteError) || isLoadingQuote))
   const sendSymbol = selectedToken?.symbol ?? 'Token'
   const sendIcon = selectedToken?.icon ?? '/images/deposit/transfer/polygon_dark.png'
   const chainIcon = selectedToken?.chainIcon ?? '/images/deposit/transfer/polygon_dark.png'
@@ -216,28 +232,44 @@ function WalletConfirmStep({
         </a>
         .
       </Badge>
+      {(hasQuoteError || hasExecutionError || pendingTransaction) && (
+        <p role="alert" className={cn('text-sm', pendingTransaction ? 'text-muted-foreground' : 'text-destructive')}>
+          {pendingTransaction
+            ? t('Transaction sent. Check its status before trying again.')
+            : t('An unexpected error occurred. Please try again.')}
+        </p>
+      )}
       <Button
         type="button"
         className="h-12 w-full"
         disabled={isCtaDisabled}
         onClick={async () => {
-          if (status !== 'ready') {
+          if (hasQuoteError && !pendingTransaction) {
+            await refetchQuote()
+            return
+          }
+          if (status !== 'ready' && !pendingTransaction) {
             return
           }
           try {
             setIsSubmitting(true)
+            setHasExecutionError(false)
             await execute()
             onComplete()
+          } catch {
+            setHasExecutionError(true)
           } finally {
             setIsSubmitting(false)
           }
         }}
       >
         {(isLoadingQuote || isSubmitting || isExecuting) && <Spinner className="size-4" />}
-        {isSubmitting && t('Confirm transaction in your wallet')}
-        {!isSubmitting && status === 'quote' && t('Preparing your quote...')}
-        {!isSubmitting && status === 'gas' && t('Estimating gas...')}
-        {!isSubmitting && status === 'ready' && t('Confirm order')}
+        {pendingTransaction && t('Check transaction status')}
+        {!pendingTransaction && isSubmitting && t('Confirm transaction in your wallet')}
+        {!pendingTransaction && !isSubmitting && hasQuoteError && t('Try again')}
+        {!pendingTransaction && !isSubmitting && !hasQuoteError && status === 'quote' && t('Preparing your quote...')}
+        {!pendingTransaction && !isSubmitting && status === 'gas' && t('Estimating gas...')}
+        {!pendingTransaction && !isSubmitting && !hasQuoteError && status === 'ready' && t('Confirm order')}
       </Button>
     </div>
   )
