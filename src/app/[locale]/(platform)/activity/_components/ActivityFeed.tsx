@@ -853,7 +853,7 @@ export default function ActivityFeed() {
     !isLoading && !hasActivityError && filteredOrders.length === 0 && !historicalActivityQuery.hasNextPage
 
   const rowClassName = cn(
-    `group relative z-0 flex w-full cursor-pointer flex-col gap-3 p-3 transition-all duration-200 ease-in-out before:pointer-events-none before:absolute before:-inset-x-3 before:inset-y-0 before:-z-10 before:rounded-lg before:bg-black/5 before:opacity-0 before:transition-opacity before:duration-200 before:content-[''] hover:before:opacity-100 sm:flex-row sm:items-center sm:gap-4 dark:before:bg-white/5`,
+    `group relative z-0 grid w-full cursor-pointer grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 p-3 transition-all duration-200 ease-in-out before:pointer-events-none before:absolute before:-inset-x-3 before:inset-y-0 before:-z-10 before:rounded-lg before:bg-black/5 before:opacity-0 before:transition-opacity before:duration-200 before:content-[''] hover:before:opacity-100 sm:flex sm:gap-4 dark:before:bg-white/5`,
   )
 
   return (
@@ -894,17 +894,17 @@ export default function ActivityFeed() {
           !hasActivityError &&
           Array.from({ length: 10 }).map((_, index) => (
             <div key={`activity-skeleton-${index}`} className={rowClassName}>
-              <div className="flex min-w-0 flex-1 items-start gap-3">
+              <div className="contents sm:flex sm:min-w-0 sm:flex-1 sm:items-start sm:gap-3">
                 <Skeleton className="size-12 shrink-0 rounded-md" />
-                <div className="min-w-0 flex-1 space-y-2">
-                  <Skeleton className="h-4 w-2/5 rounded-full" />
-                  <div className="flex items-center gap-2">
+                <div className="contents sm:block sm:min-w-0 sm:flex-1 sm:space-y-2">
+                  <Skeleton className="h-4 w-full rounded-full sm:w-2/5" />
+                  <div className="col-span-3 flex items-center gap-2 sm:col-auto">
                     <Skeleton className="size-2 rounded-full" />
                     <Skeleton className="h-3 w-1/2 rounded-full" />
                   </div>
                 </div>
               </div>
-              <Skeleton className="h-3 w-14 rounded-full" />
+              <Skeleton className="col-start-3 row-start-1 h-3 w-14 rounded-full sm:col-auto sm:row-auto" />
             </div>
           ))}
 
@@ -957,7 +957,7 @@ export default function ActivityFeed() {
                   }
                 }}
               >
-                <div className="flex min-w-0 flex-1 items-start gap-3">
+                <div className="contents sm:flex sm:min-w-0 sm:flex-1 sm:items-start sm:gap-3">
                   <Link
                     href={eventHref}
                     onClick={(event) => event.stopPropagation()}
@@ -975,19 +975,23 @@ export default function ActivityFeed() {
                     )}
                   </Link>
 
-                  <div className="min-w-0 flex-1 space-y-1">
+                  <div className="contents sm:block sm:min-w-0 sm:flex-1 sm:space-y-1">
                     <Link
                       href={eventHref}
                       onClick={(event) => event.stopPropagation()}
                       className={cn(
-                        `block max-w-[64ch] truncate text-sm text-muted-foreground underline-offset-2 hover:underline`,
+                        `block min-w-0 max-w-[64ch] truncate text-sm text-muted-foreground underline-offset-2 hover:underline`,
                       )}
                       title={activity.market.title}
                     >
                       {activity.market.title}
                     </Link>
 
-                    <div onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+                    <div
+                      className="col-span-3 min-w-0 sm:col-auto"
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
                       <ProfileLink
                         user={{
                           image: activity.user.image,
@@ -1003,17 +1007,23 @@ export default function ActivityFeed() {
                         }
                         layout="inline"
                         containerClassName="gap-2 text-sm leading-tight [&_[data-avatar]]:h-6 [&_[data-avatar]]:w-6"
-                        usernameClassName="font-semibold text-foreground underline-offset-2 hover:underline"
-                        usernameMaxWidthClassName="max-w-32 sm:max-w-40"
+                        inlineRowClassName="max-sm:w-full"
+                        inlineTriggerClassName="max-sm:min-w-20 max-sm:max-w-max max-sm:flex-[1_1_5rem]"
+                        usernameClassName="font-semibold text-foreground underline-offset-2 hover:underline max-sm:text-[13.5px]"
+                        usernameMaxWidthClassName="max-w-full sm:max-w-40"
                         inlineContent={
                           <>
                             <span className="text-muted-foreground">
                               {activity.side === 'sell' ? t('sold') : t('bought')}
                             </span>
-                            <span className={cn('font-semibold', outcomeColorClass)}>{outcomeText}</span>
-                            <span className="text-muted-foreground">{t('at')}</span>
-                            <span className="text-muted-foreground">{priceLabel}</span>
-                            {totalValueLabel && <span className="text-muted-foreground">({totalValueLabel})</span>}
+                            <span className={cn('max-w-full font-semibold [overflow-wrap:anywhere]', outcomeColorClass)}>
+                              {outcomeText}
+                            </span>
+                            <span className="max-w-full text-muted-foreground [overflow-wrap:anywhere]">
+                              {t('at')}
+                              {`\u00a0${priceLabel}`}
+                              {totalValueLabel && `\u00a0(${totalValueLabel})`}
+                            </span>
                           </>
                         }
                       />
@@ -1023,7 +1033,7 @@ export default function ActivityFeed() {
 
                 <div
                   className={cn(
-                    `flex w-full shrink-0 items-center justify-end gap-1.5 text-xs text-muted-foreground sm:w-auto`,
+                    `col-start-3 row-start-1 flex shrink-0 items-center justify-end gap-1.5 whitespace-nowrap text-xs text-muted-foreground sm:col-auto sm:row-auto`,
                   )}
                 >
                   {txUrl ? (
