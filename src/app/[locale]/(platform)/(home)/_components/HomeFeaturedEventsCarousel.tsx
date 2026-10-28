@@ -1,6 +1,6 @@
 'use client'
 
-import type { ComponentProps, CSSProperties } from 'react'
+import type { ComponentProps, CSSProperties, MouseEvent } from 'react'
 
 import { ChevronLeftIcon, ChevronRightIcon, FlameIcon } from 'lucide-react'
 import { useExtracted, useLocale } from 'next-intl'
@@ -60,9 +60,17 @@ import {
 } from '@/lib/home-featured-localization'
 import {
   applyHomeFeaturedRolloverResponse,
+  canActivateHomeFeaturedSuccessor,
+  isHomeFeaturedEventHref,
   isHomeFeaturedEventEnded,
-  resolveHomeFeaturedEventEndTimestamp,
+  isHomeFeaturedEventCurrent,
+  resolveHomeFeaturedLiveLinkFallbackHref,
+  resolveHomeFeaturedSuccessorHref,
+  resolveHomeFeaturedRolloverWakeTimestamp,
   resolveHomeFeaturedRolloverContextItems,
+  resolveHomeFeaturedRolloverAction,
+  resolveHomeFeaturedEventEndTimestamp,
+  shouldPreloadHomeFeaturedRollover,
 } from '@/lib/home-featured-rollover'
 import {
   DEFAULT_HOME_FEATURED_SIDE_CARD_TEXT,
@@ -87,10 +95,21 @@ interface HomeFeaturedEventsCarouselProps {
 const HOME_FEATURED_CHART_HEIGHT = 292
 const HOME_FEATURED_CHART_HEIGHT_OFFSET = 20
 const HOME_FEATURED_LIVE_CHART_WIDTH_OFFSET = 24
-const HOME_FEATURED_ROLLOVER_RETRY_MS = 5_000
-const HOME_FEATURED_ROLLOVER_MAX_RETRIES = 6
-const HOME_FEATURED_ROLLOVER_MAX_RETRY_DELAY_MS = 60_000
+const HOME_FEATURED_ROLLOVER_RETRY_MS = 60_000
 const FEATURED_SPORTS_BUTTON_DARK_TEXT_VAR = '--featured-sports-button-dark-text'
+
+function subscribeToFeaturedVisibility(listener: () => void) {
+  document.addEventListener('visibilitychange', listener)
+  return () => document.removeEventListener('visibilitychange', listener)
+}
+
+function getFeaturedVisibilitySnapshot() {
+  return document.visibilityState === 'visible'
+}
+
+function getFeaturedVisibilityServerSnapshot() {
+  return true
+}
 
 const HomeEventChart = dynamic(() => import('@/app/[locale]/(platform)/event/[slug]/_components/EventChart'), {
   ssr: false,
@@ -545,12 +564,12 @@ function FeaturedHeaderActions({ event, className }: { event: HomeFeaturedEventC
   )
 }
 
-function resolveFeaturedDestinationHref(item: HomeFeaturedEventCard, locale: string) {
-  const seriesSlug =
-    item.targetType === 'series' && item.kind !== 'sports' ? item.resolvedSeriesSlug || item.event.series_slug : null
-  return seriesSlug
-    ? `/api/home-featured/live-link?seriesSlug=${encodeURIComponent(seriesSlug)}&locale=${encodeURIComponent(locale)}`
-    : resolveEventPagePath(item.event)
+function resolveFeaturedDestinationHref(item: HomeFeaturedEventCard, locale: string, hasHydrated: boolean) {
+  const seriesSlug = item.targetType === 'series' ? item.resolvedSeriesSlug || item.event.series_slug : null
+  if (!hasHydrated && seriesSlug) {
+    return `/api/home-featured/live-link?seriesSlug=${encodeURIComponent(seriesSlug)}&locale=${encodeURIComponent(locale)}`
+  }
+  return resolveEventPagePath(item.event)
 }
 
 const FeaturedMarketLink = forwardRef<HTMLAnchorElement, ComponentProps<'a'> & { href: string }>(
@@ -566,8 +585,9 @@ const FeaturedMarketLink = forwardRef<HTMLAnchorElement, ComponentProps<'a'> & {
 function FeaturedHeader({ item, showActions = true }: { item: HomeFeaturedEventCard; showActions?: boolean }) {
   const t = useExtracted()
   const locale = useLocale()
+  const hasHydrated = useHasHydrated()
   const event = item.event
-  const eventHref = resolveFeaturedDestinationHref(item, locale)
+  const eventHref = resolveFeaturedDestinationHref(item, locale, hasHydrated)
   const cryptoCadencePresentation = resolveCryptoCadenceEventPresentation(event, locale)
   const breadcrumbItems = resolveFeaturedBreadcrumbItems(item).map((breadcrumbItem) => ({
     ...breadcrumbItem,
@@ -1997,42 +2017,80 @@ function buildHomeFeaturedRolloverQueueState(item: HomeFeaturedEventCard): HomeF
   }
 }
 
+function isTimedLiveFeaturedSeries(item: HomeFeaturedEventCard, event = item.event) {
+  return (
+    item.targetType === 'series' &&
+    shouldUseLiveSeriesChart(item.event, item.liveChartConfig) &&
+    resolveHomeFeaturedEventEndTimestamp(event) != null
+  )
+}
+
 function useHomeFeaturedRolloverItem(item: HomeFeaturedEventCard) {
   const locale = useLocale()
+  const isPageVisible = useSyncExternalStore(
+    subscribeToFeaturedVisibility,
+    getFeaturedVisibilitySnapshot,
+    getFeaturedVisibilityServerSnapshot,
+  )
   const [queueState, setQueueState] = useState<HomeFeaturedRolloverQueueState>(() =>
     buildHomeFeaturedRolloverQueueState(item),
   )
+  const [observedNow, setObservedNow] = useState<number | null>(null)
+  const [refreshToken, setRefreshToken] = useState(0)
   const activeIndex = queueState.activeIndex
   const rolloverEvents = queueState.events
   const activeRolloverEvent = activeIndex >= 0 ? (rolloverEvents[activeIndex] ?? null) : null
   const activeEvent = activeRolloverEvent?.event ?? item.event
   const nextRolloverEvent = rolloverEvents[activeIndex + 1] ?? null
 
+  const promoteSuccessor = useCallback(
+    (now: number) => {
+      setQueueState((current) => {
+        const currentEvent = current.events[current.activeIndex]?.event ?? item.event
+        const successor = current.events[current.activeIndex + 1]
+        if (!successor || !canActivateHomeFeaturedSuccessor(currentEvent, successor.event, now)) {
+          return current
+        }
+
+        const promotedIndex = current.activeIndex + 1
+        return {
+          ...current,
+          activeIndex: 0,
+          contextItems: successor.contextItems,
+          events: current.events.slice(promotedIndex),
+        }
+      })
+    },
+    [item.event],
+  )
+
   useEffect(
     function preloadFutureFeaturedSeriesEvents() {
-      if (item.targetType !== 'series') {
+      if (
+        !shouldPreloadHomeFeaturedRollover(
+          item.targetType === 'series',
+          isPageVisible && getFeaturedVisibilitySnapshot(),
+          nextRolloverEvent?.event ?? null,
+          Date.now(),
+        )
+      ) {
         return
       }
 
       const controller = new AbortController()
       let retryTimeoutId: number | null = null
       let isActive = true
-      let retryAttempt = 0
 
       function scheduleRolloverRetry() {
-        if (!isActive || retryAttempt >= HOME_FEATURED_ROLLOVER_MAX_RETRIES) {
-          return
+        if (isActive && getFeaturedVisibilitySnapshot()) {
+          retryTimeoutId = window.setTimeout(loadNextRolloverEvent, HOME_FEATURED_ROLLOVER_RETRY_MS)
         }
-
-        const retryDelay = Math.min(
-          HOME_FEATURED_ROLLOVER_RETRY_MS * 2 ** retryAttempt,
-          HOME_FEATURED_ROLLOVER_MAX_RETRY_DELAY_MS,
-        )
-        retryAttempt += 1
-        retryTimeoutId = window.setTimeout(loadNextRolloverEvent, retryDelay)
       }
 
       async function loadNextRolloverEvent() {
+        if (!isActive || !getFeaturedVisibilitySnapshot()) {
+          return
+        }
         try {
           const query = new URLSearchParams({
             currentEventSlug: activeEvent.slug,
@@ -2052,15 +2110,20 @@ function useHomeFeaturedRolloverItem(item: HomeFeaturedEventCard) {
             contextItems?: HomeFeaturedContextItem[]
             nextEvent?: HomeFeaturedRolloverEvent | null
           }
-          if (!isActive) {
+          if (!isActive || !getFeaturedVisibilitySnapshot()) {
             return
           }
 
           setQueueState((current) =>
             applyHomeFeaturedRolloverResponse(current, item.event.id, item.contextItems, payload),
           )
-          retryAttempt = 0
-          retryTimeoutId = window.setTimeout(loadNextRolloverEvent, 60_000)
+          const now = Date.now()
+          setObservedNow(now)
+          if (payload.nextEvent && isHomeFeaturedEventCurrent(payload.nextEvent.event, now)) {
+            promoteSuccessor(now)
+          } else if (!payload.nextEvent || isHomeFeaturedEventEnded(payload.nextEvent.event, now)) {
+            scheduleRolloverRetry()
+          }
         } catch {
           if (isActive && !controller.signal.aborted) {
             scheduleRolloverRetry()
@@ -2078,60 +2141,65 @@ function useHomeFeaturedRolloverItem(item: HomeFeaturedEventCard) {
         }
       }
     },
-    [activeEvent.slug, item.contextItems, item.event.id, item.featuredId, item.targetType, locale],
+    [
+      activeEvent.slug,
+      item.contextItems,
+      item.event.id,
+      item.featuredId,
+      item.targetType,
+      isPageVisible,
+      locale,
+      nextRolloverEvent,
+      promoteSuccessor,
+      refreshToken,
+    ],
   )
 
   useEffect(
     function scheduleFeaturedSeriesRollover() {
-      if (!nextRolloverEvent) {
-        return
-      }
-
-      const endTimestamp = resolveHomeFeaturedEventEndTimestamp(activeEvent)
-      if (endTimestamp == null) {
+      if (item.targetType !== 'series' || !isPageVisible) {
         return
       }
 
       let timeoutId: number | null = null
-      function activateNextEvent() {
-        if (!isHomeFeaturedEventEnded(activeEvent, Date.now())) {
+      function reconcileTime(refreshIfMissing: boolean) {
+        if (timeoutId != null) {
+          window.clearTimeout(timeoutId)
+          timeoutId = null
+        }
+        if (!getFeaturedVisibilitySnapshot()) {
           return
         }
+        const now = Date.now()
+        setObservedNow(now)
+        const action = resolveHomeFeaturedRolloverAction(activeEvent, nextRolloverEvent?.event ?? null, now)
+        if (action === 'promote') {
+          promoteSuccessor(now)
+        } else if (action === 'refresh' && refreshIfMissing) {
+          setRefreshToken((current) => current + 1)
+        }
 
-        setQueueState((current) => {
-          const currentNextEvent = current.events[current.activeIndex + 1]
-          if (!currentNextEvent || currentNextEvent.event.id !== nextRolloverEvent.event.id) {
-            return current
-          }
-
-          if (current.activeIndex < 0) {
-            return { ...current, activeIndex: 0, contextItems: currentNextEvent.contextItems }
-          }
-
-          const promotedIndex = current.activeIndex + 1
-          return {
-            ...current,
-            activeIndex: 0,
-            contextItems: currentNextEvent.contextItems,
-            events: current.events.slice(promotedIndex),
-          }
-        })
+        const wakeTimestamp = resolveHomeFeaturedRolloverWakeTimestamp(
+          activeEvent,
+          nextRolloverEvent?.event ?? null,
+          now,
+        )
+        if (wakeTimestamp != null) {
+          timeoutId = window.setTimeout(() => reconcileTime(true), Math.max(0, wakeTimestamp - now))
+        }
       }
-
-      timeoutId = window.setTimeout(activateNextEvent, Math.max(0, endTimestamp - Date.now()))
-      document.addEventListener('visibilitychange', activateNextEvent)
+      reconcileTime(false)
 
       return function cancelFeaturedSeriesRollover() {
         if (timeoutId != null) {
           window.clearTimeout(timeoutId)
         }
-        document.removeEventListener('visibilitychange', activateNextEvent)
       }
     },
-    [activeEvent, nextRolloverEvent],
+    [activeEvent, isPageVisible, item.targetType, nextRolloverEvent, promoteSuccessor],
   )
 
-  return useMemo<HomeFeaturedEventCard>(() => {
+  const displayedItem = useMemo<HomeFeaturedEventCard>(() => {
     return {
       ...item,
       ...activeRolloverEvent,
@@ -2139,6 +2207,22 @@ function useHomeFeaturedRolloverItem(item: HomeFeaturedEventCard) {
       nextSeriesEvent: nextRolloverEvent,
     }
   }, [activeRolloverEvent, item, nextRolloverEvent, queueState])
+
+  return {
+    item: displayedItem,
+    unavailable:
+      isTimedLiveFeaturedSeries(item, activeEvent) &&
+      observedNow != null &&
+      !isHomeFeaturedEventCurrent(activeEvent, observedNow),
+    refreshAtClick: (now: number) => {
+      setObservedNow(now)
+      if (nextRolloverEvent && canActivateHomeFeaturedSuccessor(activeEvent, nextRolloverEvent.event, now)) {
+        promoteSuccessor(now)
+        return nextRolloverEvent.event
+      }
+      return null
+    },
+  }
 }
 
 function FeaturedSlide({
@@ -2156,11 +2240,13 @@ function FeaturedSlide({
   isNext: boolean
   isChartEnabled: boolean
 }) {
-  const rolloverItem = useHomeFeaturedRolloverItem(sourceItem)
+  const { item: rolloverItem, unavailable, refreshAtClick } = useHomeFeaturedRolloverItem(sourceItem)
+  const t = useExtracted()
   const locale = useLocale()
+  const hasHydrated = useHasHydrated()
   const item = useMemo(() => localizeHomeFeaturedMarketDates(rolloverItem, locale), [locale, rolloverItem])
   const isMobile = useIsMobile()
-  const linkedHref = resolveFeaturedDestinationHref(item, locale)
+  const linkedHref = resolveFeaturedDestinationHref(item, locale, hasHydrated)
   const shouldRenderChart = isChartEnabled && (isPrevious || isActive || isNext)
   const [chartContainerRef, chartContainerWidth] = useElementWidth<HTMLDivElement>(shouldRenderChart)
   const isSingleMarket = item.event.total_markets_count === 1 || item.event.markets.length === 1
@@ -2252,9 +2338,49 @@ function FeaturedSlide({
       chartNode
     )
 
+  function handleFeaturedClickCapture(event: MouseEvent<HTMLElement>) {
+    if (!isTimedLiveFeaturedSeries(sourceItem)) {
+      return
+    }
+    const anchor = (event.target as Element).closest<HTMLAnchorElement>('a[href]')
+    if (!anchor || !isHomeFeaturedEventHref(item.event, anchor.href)) {
+      return
+    }
+    const now = Date.now()
+    if (isHomeFeaturedEventCurrent(item.event, now)) {
+      return
+    }
+    const successor = refreshAtClick(now)
+    const successorHref = successor && resolveHomeFeaturedSuccessorHref(item.event, successor, anchor.href)
+    const destinationHref =
+      successorHref ||
+      resolveHomeFeaturedLiveLinkFallbackHref(
+        item.event,
+        anchor.href,
+        sourceItem.resolvedSeriesSlug || item.event.series_slug || '',
+        locale,
+      )
+    if (destinationHref) {
+      anchor.href = destinationHref
+      event.stopPropagation()
+      return
+    }
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  if (unavailable) {
+    return (
+      <article className="flex h-full min-w-full items-center justify-center p-5 text-center text-sm text-muted-foreground">
+        {t('No markets found')}
+      </article>
+    )
+  }
+
   if (item.kind === 'sports') {
     return (
       <article
+        onClickCapture={handleFeaturedClickCapture}
         className={cn(
           `relative flex h-full min-w-full flex-col gap-4 overflow-hidden p-4 pb-[52px] md:p-5 md:pb-[56px]`,
         )}
@@ -2280,6 +2406,7 @@ function FeaturedSlide({
   if (shouldRenderLiveSeriesChart) {
     return (
       <article
+        onClickCapture={handleFeaturedClickCapture}
         className={cn(
           `relative flex h-full min-w-full flex-col gap-4 overflow-hidden p-4 pb-[52px] md:p-5 md:pb-[56px]`,
         )}
@@ -2310,6 +2437,7 @@ function FeaturedSlide({
 
   return (
     <article
+      onClickCapture={handleFeaturedClickCapture}
       className={cn(`relative flex h-full min-w-full flex-col gap-4 overflow-hidden p-4 pb-[52px] md:p-5 md:pb-[56px]`)}
     >
       <FeaturedHeader item={item} />

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, exists, gt, inArray, isNotNull, isNull, lte, not, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, exists, gt, inArray, isNotNull, isNull, lte, ne, not, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { cacheTag, revalidateTag } from 'next/cache'
 
@@ -481,6 +481,7 @@ async function resolveSeriesTarget(seriesSlug: string) {
         eq(events.series_slug, normalizedSeriesSlug),
         eq(events.status, 'active'),
         eq(events.is_hidden, false),
+        or(isNull(events.start_date), lte(events.start_date, now)),
         buildPublicEventListVisibilityCondition(events.id),
         hasActiveFeaturedMarketCondition(),
         hasOpenFeaturedWindowCondition(now),
@@ -527,6 +528,7 @@ async function resolveSeriesTargetsBySlug(seriesSlugs: string[]) {
         inArray(events.series_slug, normalizedSeriesSlugs),
         eq(events.status, 'active'),
         eq(events.is_hidden, false),
+        or(isNull(events.start_date), lte(events.start_date, now)),
         buildPublicEventListVisibilityCondition(events.id),
         hasActiveFeaturedMarketCondition(),
         hasOpenFeaturedWindowCondition(now),
@@ -646,6 +648,33 @@ function resolveAdminFeaturedEventTarget(row: AdminFeaturedEventRow, seriesTarge
 }
 
 export const HomeFeaturedEventsRepository = {
+  async findNextSeriesRolloverEvent(
+    seriesSlug: string,
+    currentEventId: string,
+    after: Date,
+  ): Promise<QueryResult<{ id: string; slug: string } | null>> {
+    return runQuery(async () => {
+      const rows = await db
+        .select({ id: events.id, slug: events.slug })
+        .from(events)
+        .where(
+          and(
+            eq(events.series_slug, seriesSlug),
+            ne(events.id, currentEventId),
+            eq(events.status, 'active'),
+            eq(events.is_hidden, false),
+            gt(events.end_date, after),
+            buildPublicEventListVisibilityCondition(events.id),
+            hasActiveFeaturedMarketCondition(),
+          ),
+        )
+        .orderBy(asc(events.end_date), desc(events.created_at), desc(events.id))
+        .limit(1)
+
+      return { data: rows[0] ?? null, error: null }
+    })
+  },
+
   async resolveLiveSeriesDestination(
     seriesSlug: string,
     selectedMarketSlug: string | null,
