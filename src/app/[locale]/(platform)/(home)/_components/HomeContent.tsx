@@ -38,6 +38,7 @@ export default async function HomeContent({
   const shouldLoadFeaturedEvents = initialTagSlug === 'trending' && initialMainTagSlug === 'trending'
   const initialSortBy = getInitialHomeEventsSortBy(initialTagSlug)
   let initialCurrentTimestamp: number | null = null
+  let initialEventsUpdatedAt = 0
   let initialHasMore = false
 
   let initialEvents: Event[] = []
@@ -53,16 +54,18 @@ export default async function HomeContent({
     bookmarked: false,
     locale: resolvedLocale,
     currentTimestamp,
+    includeUpdatedAt: true,
     ...(initialSortBy && { sortBy: initialSortBy }),
   })
-    .then(({ data: events, error, currentTimestamp: resolvedCurrentTimestamp, hasMore }) => ({
+    .then(({ data: events, error, currentTimestamp: resolvedCurrentTimestamp, hasMore, updatedAt }) => ({
       events: error ? [] : (events ?? []),
       currentTimestamp: resolvedCurrentTimestamp ?? null,
+      updatedAt: error ? 0 : (updatedAt ?? 0),
       hasMore: !error && hasMore === true,
     }))
     .catch((error) => {
       console.error('Failed to load initial home events', error)
-      return { events: [], currentTimestamp: null, hasMore: false }
+      return { events: [], currentTimestamp: null, updatedAt: 0, hasMore: false }
     })
 
   const featuredEventsPromise = shouldLoadFeaturedEvents
@@ -115,6 +118,7 @@ export default async function HomeContent({
 
   initialEvents = initialEventsResult.events
   initialCurrentTimestamp = initialEventsResult.currentTimestamp
+  initialEventsUpdatedAt = initialEventsResult.updatedAt
   initialHasMore = initialEventsResult.hasMore
   initialFeaturedEvents = featuredEventsResult.featuredEvents
   initialFeaturedHotTopics = featuredEventsResult.featuredHotTopics
@@ -139,6 +143,7 @@ export default async function HomeContent({
           initialFeaturedHotTopics={initialFeaturedHotTopics}
           initialFeaturedSideCard={initialFeaturedSideCard}
           initialEvents={initialEvents}
+          initialEventsUpdatedAt={initialEventsUpdatedAt}
           initialHasMore={initialHasMore}
           initialCurrentTimestamp={initialCurrentTimestamp}
           initialTag={initialTagSlug}
